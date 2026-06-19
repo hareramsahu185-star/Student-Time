@@ -1,0 +1,6 @@
+{
+  "name": "Student Life OS",
+  "description": "A comprehensive personal productivity dashboard for a Class 12 Commerce student to manage board exam prep, programming, habits, recovery queues, notes, and analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
