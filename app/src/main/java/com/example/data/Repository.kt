@@ -9,31 +9,40 @@ import kotlinx.coroutines.flow.first
 class Repository(private val db: AppDatabase) {
 
     // DAOs
-    private val timetableDao = db.timetableDao()
-    private val subjectDao = db.subjectDao()
-    private val weeklyDao = db.weeklyDao()
-    private val programmingDao = db.programmingDao()
-    private val selfImprovementDao = db.selfImprovementDao()
-    private val habitDao = db.habitDao()
-    private val notesDao = db.notesDao()
-    private val goalsDao = db.goalsDao()
+    val userDao = db.userDao()
+    val timetableDao = db.timetableDao()
+    val subjectDao = db.subjectDao()
+    val weeklyDao = db.weeklyDao()
+    val programmingDao = db.programmingDao()
+    val selfImprovementDao = db.selfImprovementDao()
+    val habitDao = db.habitDao()
+    val notesDao = db.notesDao()
+    val goalsDao = db.goalsDao()
+    val studySessionDao = db.studySessionDao()
+    val chapterStatusDao = db.chapterStatusDao()
+    val journalDao = db.journalDao()
+    val friendDao = db.friendDao()
 
-    // Flows
-    val allTasks: Flow<List<TimetableTask>> = timetableDao.getAllTasks()
-    val allSubjects: Flow<List<SubjectProgress>> = subjectDao.getAllSubjects()
-    val weeklyPlans: Flow<List<WeeklyPlan>> = weeklyDao.getWeeklyPlans()
-    val programmingTrackers: Flow<List<ProgrammingTracker>> = programmingDao.getTrackers()
-    val selfImprovements: Flow<List<SelfImprovementTracker>> = selfImprovementDao.getTrackers()
-    val allHabits: Flow<List<Habit>> = habitDao.getAllHabits()
-    val habitLogs: Flow<List<HabitLog>> = habitDao.getAllLogs()
-    val allNotes: Flow<List<NoteItem>> = notesDao.getAllNotes()
-    val allGoals: Flow<List<GoalMetric>> = goalsDao.getGoals()
+    // Scoped Flows based on Username
+    fun allTasks(username: String): Flow<List<TimetableTask>> = timetableDao.getAllTasks(username)
+    fun allSubjects(username: String): Flow<List<SubjectProgress>> = subjectDao.getAllSubjects(username)
+    fun weeklyPlans(username: String): Flow<List<WeeklyPlan>> = weeklyDao.getWeeklyPlans(username)
+    fun programmingTrackers(username: String): Flow<List<ProgrammingTracker>> = programmingDao.getTrackers(username)
+    fun selfImprovements(username: String): Flow<List<SelfImprovementTracker>> = selfImprovementDao.getTrackers(username)
+    fun allHabits(username: String): Flow<List<Habit>> = habitDao.getAllHabits(username)
+    fun habitLogs(username: String): Flow<List<HabitLog>> = habitDao.getAllLogs(username)
+    fun allNotes(username: String): Flow<List<NoteItem>> = notesDao.getAllNotes(username)
+    fun allGoals(username: String): Flow<List<GoalMetric>> = goalsDao.getGoals(username)
+    fun studySessions(username: String): Flow<List<StudySession>> = studySessionDao.getStudySessions(username)
+    fun chapterStatuses(username: String): Flow<List<ChapterStatus>> = chapterStatusDao.getChapterStatuses(username)
+    fun journalEntries(username: String): Flow<List<JournalEntry>> = journalDao.getJournalEntries(username)
+    val allFriends: Flow<List<Friend>> = friendDao.getFriends()
 
     // Timetable operations
     suspend fun insertTask(task: TimetableTask) = timetableDao.insertTask(task)
     suspend fun updateTask(task: TimetableTask) = timetableDao.updateTask(task)
     suspend fun deleteTask(task: TimetableTask) = timetableDao.deleteTask(task)
-    suspend fun clearTimetable() = timetableDao.clearAll()
+    suspend fun clearTimetable(username: String) = timetableDao.clearAll(username)
     suspend fun insertTasks(tasks: List<TimetableTask>) = timetableDao.insertTasks(tasks)
 
     // Subject operations
@@ -52,10 +61,11 @@ class Repository(private val db: AppDatabase) {
     // Habit operations
     suspend fun insertHabit(habit: Habit) = habitDao.insertHabit(habit)
     suspend fun insertHabitLog(log: HabitLog) = habitDao.insertLog(log)
-    suspend fun deleteHabitLog(habitName: String, dateStr: String) = habitDao.deleteLog(habitName, dateStr)
-    suspend fun clearHabits() {
-        habitDao.clearAll()
-        habitDao.clearAllLogs()
+    suspend fun deleteHabitLog(username: String, habitName: String, dateStr: String) = habitDao.deleteLog(username, habitName, dateStr)
+    suspend fun getLogsForDate(username: String, dateStr: String): Flow<List<HabitLog>> = habitDao.getLogsForDate(username, dateStr)
+    suspend fun clearHabits(username: String) {
+        habitDao.clearAll(username)
+        habitDao.clearAllLogs(username)
     }
 
     // Notes operations
@@ -65,23 +75,77 @@ class Repository(private val db: AppDatabase) {
     // Goal operations
     suspend fun insertGoal(goal: GoalMetric) = goalsDao.insertGoal(goal)
 
-    // Reset database to initial template
-    suspend fun resetDatabase() {
-        db.runInTransaction {
-            // Since we can't run suspend calls directly inside runInTransaction, 
-            // we will run them sequentially in background context or just call clear operations.
-        }
-        timetableDao.clearAll()
-        subjectDao.clearAll()
-        weeklyDao.clearAll()
-        programmingDao.clearAll()
-        selfImprovementDao.clearAll()
-        habitDao.clearAll()
-        habitDao.clearAllLogs()
-        notesDao.clearAll()
-        goalsDao.clearAll()
+    // Study Sessions
+    suspend fun insertStudySession(session: StudySession) = studySessionDao.insertSession(session)
+    suspend fun clearSessions(username: String) = studySessionDao.clearAll(username)
 
-        seedDatabase(db)
+    // Chapter Status
+    suspend fun insertChapterStatus(cs: ChapterStatus) = chapterStatusDao.insertChapterStatus(cs)
+    suspend fun clearChapterStatuses(username: String) = chapterStatusDao.clearAll(username)
+
+    // Journal
+    suspend fun insertJournal(entry: JournalEntry) = journalDao.insertJournal(entry)
+    suspend fun clearJournal(username: String) = journalDao.clearAll(username)
+
+    // Friends
+    suspend fun insertFriend(friend: Friend) = friendDao.insertFriend(friend)
+    suspend fun updateFriend(friend: Friend) = friendDao.updateFriend(friend)
+    suspend fun deleteFriend(name: String) = friendDao.deleteFriend(name)
+    suspend fun clearFriends() = friendDao.clearAll()
+
+    // Authentication local helpers
+    suspend fun registerUser(username: String, passwordHash: String, securityAnswer: String): Boolean {
+        val existing = userDao.getUserByUsername(username)
+        if (existing != null) return false
+        val newUser = UserLocal(
+            username = username,
+            passwordHash = passwordHash,
+            securityAnswer = securityAnswer,
+            xp = 100,
+            coins = 10,
+            level = 1,
+            streak = 1,
+            isVerified = true
+        )
+        userDao.insertUser(newUser)
+        seedDatabaseForUser(db, username)
+        return true
+    }
+
+    suspend fun loginUser(username: String, passwordHash: String): UserLocal? {
+        val user = userDao.getUserByUsername(username) ?: return null
+        return if (user.passwordHash == passwordHash) user else null
+    }
+
+    suspend fun verifyReset(username: String, answer: String, newPasswordHash: String): Boolean {
+        val user = userDao.getUserByUsername(username) ?: return false
+        if (user.securityAnswer.trim().equals(answer.trim(), ignoreCase = true)) {
+            userDao.insertUser(user.copy(passwordHash = newPasswordHash))
+            return true
+        }
+        return false
+    }
+
+    suspend fun updateUserProfile(user: UserLocal) {
+        userDao.updateUser(user)
+    }
+
+    // Reset database to initial template
+    suspend fun resetDatabase(username: String) {
+        timetableDao.clearAll(username)
+        subjectDao.clearAll(username)
+        weeklyDao.clearAll(username)
+        programmingDao.clearAll(username)
+        selfImprovementDao.clearAll(username)
+        habitDao.clearAll(username)
+        habitDao.clearAllLogs(username)
+        notesDao.clearAll(username)
+        goalsDao.clearAll(username)
+        studySessionDao.clearAll(username)
+        chapterStatusDao.clearAll(username)
+        journalDao.clearAll(username)
+
+        seedDatabaseForUser(db, username)
     }
 
     // JSON Backup structure helper
@@ -94,32 +158,38 @@ class Repository(private val db: AppDatabase) {
         val habits: List<Habit>,
         val habitLogs: List<HabitLog>,
         val notes: List<NoteItem>,
-        val goals: List<GoalMetric>
+        val goals: List<GoalMetric>,
+        val studySessions: List<StudySession>,
+        val chapterStatuses: List<ChapterStatus>,
+        val journalEntries: List<JournalEntry>
     )
 
-    // Export all data as JSON
-    suspend fun exportAsJson(): String {
+    // Export user data as JSON
+    suspend fun exportAsJson(username: String): String {
         val moshi = Moshi.Builder()
             .add(KotlinJsonAdapterFactory())
             .build()
         val adapter = moshi.adapter(BackupData::class.java)
 
         val backup = BackupData(
-            tasks = allTasks.first(),
-            subjects = allSubjects.first(),
-            weeklyPlans = weeklyPlans.first(),
-            programmingTracks = programmingTrackers.first(),
-            selfImprovements = selfImprovements.first(),
-            habits = allHabits.first(),
-            habitLogs = habitLogs.first(),
-            notes = allNotes.first(),
-            goals = allGoals.first()
+            tasks = allTasks(username).first(),
+            subjects = allSubjects(username).first(),
+            weeklyPlans = weeklyPlans(username).first(),
+            programmingTracks = programmingTrackers(username).first(),
+            selfImprovements = selfImprovements(username).first(),
+            habits = allHabits(username).first(),
+            habitLogs = habitLogs(username).first(),
+            notes = allNotes(username).first(),
+            goals = allGoals(username).first(),
+            studySessions = studySessions(username).first(),
+            chapterStatuses = chapterStatuses(username).first(),
+            journalEntries = journalEntries(username).first()
         )
         return adapter.toJson(backup)
     }
 
-    // Import all data from JSON
-    suspend fun importFromJson(jsonString: String): Boolean {
+    // Import user data from JSON
+    suspend fun importFromJson(username: String, jsonString: String): Boolean {
         return try {
             val moshi = Moshi.Builder()
                 .add(KotlinJsonAdapterFactory())
@@ -127,36 +197,51 @@ class Repository(private val db: AppDatabase) {
             val adapter = moshi.adapter(BackupData::class.java)
             val backup = adapter.fromJson(jsonString) ?: return false
 
-            timetableDao.clearAll()
-            timetableDao.insertTasks(backup.tasks)
+            timetableDao.clearAll(username)
+            timetableDao.insertTasks(backup.tasks.map { it.copy(username = username) })
 
-            subjectDao.clearAll()
-            subjectDao.insertSubjects(backup.subjects)
+            subjectDao.clearAll(username)
+            subjectDao.insertSubjects(backup.subjects.map { it.copy(username = username) })
 
-            weeklyDao.clearAll()
-            weeklyDao.insertPlans(backup.weeklyPlans)
+            weeklyDao.clearAll(username)
+            weeklyDao.insertPlans(backup.weeklyPlans.map { it.copy(username = username) })
 
-            programmingDao.clearAll()
-            programmingDao.insertTrackers(backup.programmingTracks)
+            programmingDao.clearAll(username)
+            programmingDao.insertTrackers(backup.programmingTracks.map { it.copy(username = username) })
 
-            selfImprovementDao.clearAll()
-            selfImprovementDao.insertImprovements(backup.selfImprovements)
+            selfImprovementDao.clearAll(username)
+            selfImprovementDao.insertImprovements(backup.selfImprovements.map { it.copy(username = username) })
 
-            habitDao.clearAll()
-            habitDao.insertHabits(backup.habits)
+            habitDao.clearAll(username)
+            habitDao.insertHabits(backup.habits.map { it.copy(username = username) })
 
-            habitDao.clearAllLogs()
+            habitDao.clearAllLogs(username)
             backup.habitLogs.forEach { log ->
-                habitDao.insertLog(log)
+                habitDao.insertLog(log.copy(username = username))
             }
 
-            notesDao.clearAll()
+            notesDao.clearAll(username)
             backup.notes.forEach { note ->
-                notesDao.insertNote(note)
+                notesDao.insertNote(note.copy(username = username))
             }
 
-            goalsDao.clearAll()
-            goalsDao.insertGoals(backup.goals)
+            goalsDao.clearAll(username)
+            goalsDao.insertGoals(backup.goals.map { it.copy(username = username) })
+
+            studySessionDao.clearAll(username)
+            backup.studySessions.forEach {
+                studySessionDao.insertSession(it.copy(username = username))
+            }
+
+            chapterStatusDao.clearAll(username)
+            backup.chapterStatuses.forEach {
+                chapterStatusDao.insertChapterStatus(it.copy(username = username))
+            }
+
+            journalDao.clearAll(username)
+            backup.journalEntries.forEach {
+                journalDao.insertJournal(it.copy(username = username))
+            }
 
             true
         } catch (e: Exception) {

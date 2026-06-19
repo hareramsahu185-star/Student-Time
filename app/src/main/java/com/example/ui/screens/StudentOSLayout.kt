@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.example.ui.screens
 
 import android.widget.Toast
@@ -6,6 +7,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -25,7 +27,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -33,6 +34,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -47,400 +49,325 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
-// Glassmorphism Card Style Modifier
-@Composable
-fun Modifier.glassCard(
-    borderColor: Color = Color(0x33E5E9F0),
-    cornerRadius: Dp = 16.dp,
-    backgroundColor: Color = CardGlassSurface
-) = this
-    .clip(RoundedCornerShape(cornerRadius))
-    .background(backgroundColor)
-    .border(1.dp, borderColor, RoundedCornerShape(cornerRadius))
+// ----------------------------------------------------
+// Theme Color Definitions
+// ----------------------------------------------------
+val DarkBackground = Color(0xFF0F172A)      // Deep Indigo Space Dark
+val DeepSlateCard = Color(0xFF1E293B)       // Glass Card base
+val CyanPrimary = Color(0xFF06B6D4)         // Radiant Cyan tech highlight
+val PurpleAccent = Color(0xFF8B5CF6)        // Gamification / XP color
+val EmeraldPositive = Color(0xFF10B981)     // Completed / Mastered positive
+val CrimsonAlert = Color(0xFFEF4444)        // Error / Alert / skipped target
+val AmberWarm = Color(0xFFF59E0B)           // Streak / Coins
+val TextLightGray = Color(0xFF94A3B8)       // Subtitle labels
+val TextSolidWhite = Color(0xFFF8FAFC)      // High-contrast clean white
 
-@OptIn(ExperimentalMaterial3Api::class)
+fun Modifier.glassCard(
+    borderColor: Color = Color(0xFF334155),
+    backgroundColor: Color = DeepSlateCard
+) = this
+    .clip(RoundedCornerShape(16.dp))
+    .background(backgroundColor)
+    .border(1.dp, borderColor, RoundedCornerShape(16.dp))
+    .padding(16.dp)
+
+// ----------------------------------------------------
+// Main Entrance Entry Point layout
+// ----------------------------------------------------
 @Composable
 fun StudentOSLayout(viewModel: DashboardViewModel) {
-    val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
 
-    // Observe StateFlows from ViewModel
-    val currentAndNext by viewModel.currentAndNextTask.collectAsStateWithLifecycle()
-    val (currentTask, nextTask) = currentAndNext
+    val activeUser by viewModel.currentUser.collectAsStateWithLifecycle()
+    val isWizardNeeded by viewModel.needsSetupWizard.collectAsStateWithLifecycle()
 
-    val dailyProgress by viewModel.dailyProgressPercent.collectAsStateWithLifecycle()
-    val studyHrsCompleted by viewModel.studyHoursCompleted.collectAsStateWithLifecycle()
-    val progHrsCompleted by viewModel.programmingHoursCompleted.collectAsStateWithLifecycle()
-
-    val taskList by viewModel.tasks.collectAsStateWithLifecycle()
-    val subjectList by viewModel.subjects.collectAsStateWithLifecycle()
-    val weeklyPlanList by viewModel.weeklyPlans.collectAsStateWithLifecycle()
-    val progTrackerList by viewModel.programmingTrackers.collectAsStateWithLifecycle()
-    val selfImpList by viewModel.selfImprovements.collectAsStateWithLifecycle()
-    val habitList by viewModel.habits.collectAsStateWithLifecycle()
-    val habitLogList by viewModel.habitLogs.collectAsStateWithLifecycle()
-    val noteList by viewModel.notes.collectAsStateWithLifecycle()
-    val goalList by viewModel.goals.collectAsStateWithLifecycle()
-
-    val liveTime by viewModel.currentTime.collectAsStateWithLifecycle()
-    val dateStr by viewModel.currentDateStr.collectAsStateWithLifecycle()
-
-    // Tab Selection state
-    var selectedTab by remember { mutableStateOf("Dashboard") }
-    val tabs = listOf("Dashboard", "Timetable", "Subjects", "Trackers", "Habits", "Notes")
-
-    // Overlay dialog controls
     var showBackupDialog by remember { mutableStateOf(false) }
-    var importText by remember { mutableStateOf("") }
+    var importText by remember { mutableStateOf(false) }
+    var importRawJson by remember { mutableStateOf("") }
 
-    Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Filled.School,
-                            contentDescription = null,
-                            tint = CyanPrimary,
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
-                        Text(
-                            "STUDENT LIFE OPERATING SYSTEM",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextSolidWhite,
-                            fontFamily = FontFamily.SansSerif
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(
-                        onClick = { showBackupDialog = true },
-                        modifier = Modifier.testTag("backup_button")
-                    ) {
-                        Icon(Icons.Filled.Backup, contentDescription = "Backup Menu", tint = CyanPrimary)
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = DarkBackground
-                )
-            )
-        },
-        bottomBar = {
-            // Adaptive horizontal menu
-            NavigationBar(
-                containerColor = DarkBackground,
-                tonalElevation = 8.dp,
-                modifier = Modifier
-                    .windowInsetsPadding(WindowInsets.navigationBars)
-                    .testTag("bottom_navigation_bar")
-            ) {
-                tabs.forEach { tab ->
-                    val isSelected = selectedTab == tab
-                    val (icon, label) = when (tab) {
-                        "Dashboard" -> Pair(Icons.Filled.Dashboard, "Home")
-                        "Timetable" -> Pair(Icons.Filled.Schedule, "Schedule")
-                        "Subjects" -> Pair(Icons.Filled.Book, "Subjects")
-                        "Trackers" -> Pair(Icons.Filled.TrendingUp, "Trackers")
-                        "Habits" -> Pair(Icons.Filled.Beenhere, "Habits")
-                        "Notes" -> Pair(Icons.Filled.NoteAlt, "Notes")
-                        else -> Pair(Icons.Filled.Help, "")
-                    }
-                    NavigationBarItem(
-                        selected = isSelected,
-                        onClick = { selectedTab = tab },
-                        icon = { Icon(icon, contentDescription = label) },
-                        label = { Text(label, fontSize = 11.sp) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = DarkBackground,
-                            unselectedIconColor = TextMutedGray,
-                            selectedTextColor = CyanPrimary,
-                            unselectedTextColor = TextMutedGray,
-                            indicatorColor = CyanPrimary
-                        )
+    if (activeUser == null) {
+        // Welcome and Secured Authentication Entrance
+        AuthenticationScreen(viewModel = viewModel)
+    } else if (isWizardNeeded) {
+        // First Signup setup wizard screen and target metrics setting
+        SetupWizardScreen(viewModel = viewModel)
+    } else {
+        // Full Student Operating System workspace interface
+        val userObj = activeUser!!
+        val taskList by viewModel.tasks.collectAsStateWithLifecycle()
+        val subjectList by viewModel.subjects.collectAsStateWithLifecycle()
+        val weeklyPlanList by viewModel.weeklyPlans.collectAsStateWithLifecycle()
+        val progTrackerList by viewModel.programmingTrackers.collectAsStateWithLifecycle()
+        val habitList by viewModel.habits.collectAsStateWithLifecycle()
+        val habitLogList by viewModel.habitLogs.collectAsStateWithLifecycle()
+        val noteList by viewModel.notes.collectAsStateWithLifecycle()
+        val goalList by viewModel.goals.collectAsStateWithLifecycle()
+        val sessionList by viewModel.studySessions.collectAsStateWithLifecycle()
+        val chStatusList by viewModel.chapterStatuses.collectAsStateWithLifecycle()
+        val journalList by viewModel.journalEntries.collectAsStateWithLifecycle()
+        val friendsList by viewModel.friends.collectAsStateWithLifecycle()
+        val selfImpList by viewModel.selfImprovements.collectAsStateWithLifecycle()
+
+        val dailyProgress by viewModel.dailyProgressPercent.collectAsStateWithLifecycle()
+        val liveTime by viewModel.currentTime.collectAsStateWithLifecycle()
+        val dateStr by viewModel.currentDateStr.collectAsStateWithLifecycle()
+
+        var selectedTab by remember { mutableStateOf("Dashboard") }
+        val tabs = listOf("Dashboard", "Timetable", "Subjects", "Trackers", "Habits", "Notes", "Analytics")
+
+        Scaffold(
+            topBar = {
+                CenterAlignedTopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Filled.School,
+                                contentDescription = null,
+                                tint = CyanPrimary,
+                                modifier = Modifier.padding(end = 8.dp)
+                            )
+                            Text(
+                                "STUDENT LIFE OS",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = TextSolidWhite,
+                                fontFamily = FontFamily.SansSerif
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        Box(
+                            modifier = Modifier
+                                .padding(start = 12.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(PurpleAccent.copy(alpha = 0.2f))
+                                .border(1.dp, PurpleAccent, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                "LVL ${userObj.level}",
+                                color = TextSolidWhite,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(
+                            onClick = { showBackupDialog = true },
+                            modifier = Modifier.testTag("backup_button")
+                        ) {
+                            Icon(Icons.Filled.Backup, contentDescription = "Backup Menu", tint = CyanPrimary)
+                        }
+                        IconButton(
+                            onClick = { viewModel.logout() },
+                            modifier = Modifier.testTag("logout_button")
+                        ) {
+                            Icon(Icons.Filled.ExitToApp, contentDescription = "Sign Out", tint = CrimsonAlert)
+                        }
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = DarkBackground
                     )
+                )
+            },
+            bottomBar = {
+                NavigationBar(
+                    containerColor = DarkBackground,
+                    tonalElevation = 8.dp,
+                    modifier = Modifier
+                        .windowInsetsPadding(WindowInsets.navigationBars)
+                        .testTag("bottom_navigation_bar")
+                ) {
+                    tabs.forEach { tab ->
+                        val isSelected = selectedTab == tab
+                        val icon = when (tab) {
+                            "Dashboard" -> Icons.Filled.Dashboard
+                            "Timetable" -> Icons.Filled.CalendarMonth
+                            "Subjects" -> Icons.Filled.MenuBook
+                            "Trackers" -> Icons.Filled.SettingsInputHdmi
+                            "Habits" -> Icons.Filled.CheckCircle
+                            "Notes" -> Icons.Filled.Notes
+                            else -> Icons.Filled.BarChart
+                        }
+                        NavigationBarItem(
+                            selected = isSelected,
+                            onClick = { selectedTab = tab },
+                            modifier = Modifier.testTag("nav_tab_$tab"),
+                            icon = {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = tab,
+                                    tint = if (isSelected) CyanPrimary else TextLightGray
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = tab,
+                                    fontSize = 11.sp,
+                                    color = if (isSelected) TextSolidWhite else TextLightGray,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                indicatorColor = DeepSlateCard
+                            )
+                        )
+                    }
                 }
-            }
-        },
-        containerColor = DarkBackground
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(DarkBackground, Color(0xFF0F172A))
-                    )
-                )
-        ) {
-            // Top Live Banner (Always visible in Header)
-            LiveHeaderRow(liveTime, dateStr, dailyProgress, currentTask, nextTask)
-
-            // Dynamic Content Pane based on current tab
+            },
+            containerColor = DarkBackground
+        ) { innerPadding ->
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .weight(1f)
-                    .padding(horizontal = 16.dp)
+                    .padding(innerPadding)
             ) {
-                AnimatedContent(
-                    targetState = selectedTab,
-                    transitionSpec = {
-                        slideInHorizontally { width -> width / 2 } + fadeIn() togetherWith
-                                slideOutHorizontally { width -> -width / 2 } + fadeOut()
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                    label = "tab_transition"
-                ) { targetTab ->
-                    when (targetTab) {
-                        "Dashboard" -> DashboardScreen(
-                            dailyProgress,
-                            studyHrsCompleted,
-                            progHrsCompleted,
-                            taskList,
-                            goalList,
-                            viewModel
-                        )
-                        "Timetable" -> TimetableScreen(taskList, viewModel)
-                        "Subjects" -> SubjectsScreen(subjectList, weeklyPlanList, viewModel)
-                        "Trackers" -> TrackersScreen(progTrackerList, selfImpList, viewModel)
-                        "Habits" -> HabitsScreen(habitList, habitLogList, viewModel)
-                        "Notes" -> NotesScreen(noteList, viewModel)
-                    }
+                when (selectedTab) {
+                    "Dashboard" -> DashboardScreen(
+                        viewModel = viewModel,
+                        userObj = userObj,
+                        dailyProgress = dailyProgress,
+                        liveTime = liveTime,
+                        dateStr = dateStr,
+                        sessionList = sessionList,
+                        journalList = journalList,
+                        friendsList = friendsList,
+                        goalList = goalList
+                    )
+                    "Timetable" -> TimetableScreen(
+                        tasks = taskList,
+                        viewModel = viewModel
+                    )
+                    "Subjects" -> SubjectsScreen(
+                        subjects = subjectList,
+                        chapterStatuses = chStatusList,
+                        viewModel = viewModel
+                    )
+                    "Trackers" -> TrackersScreen(
+                        trackers = progTrackerList,
+                        selfImprovements = selfImpList,
+                        viewModel = viewModel
+                    )
+                    "Habits" -> HabitsScreen(
+                        habits = habitList,
+                        logs = habitLogList,
+                        viewModel = viewModel
+                    )
+                    "Notes" -> NotesScreen(
+                        notes = noteList,
+                        viewModel = viewModel
+                    )
+                    "Analytics" -> AnalyticsScreen(
+                        sessions = sessionList,
+                        journal = journalList,
+                        habits = habitList,
+                        logs = habitLogList
+                    )
                 }
             }
         }
-    }
 
-    // Backup & Restore Dialog
-    if (showBackupDialog) {
-        Dialog(onDismissRequest = { showBackupDialog = false }) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .wrapContentHeight()
-                    .glassCard()
-                    .padding(20.dp),
-                color = CardGlassSurface
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "DATA OS CONTROL PANEL",
-                        fontWeight = FontWeight.Bold,
-                        color = CyanPrimary,
-                        fontSize = 18.sp,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-
-                    Button(
-                        onClick = {
-                            coroutineScope.launch {
-                                val json = viewModel.exportJson()
-                                clipboardManager.setText(AnnotatedString(json))
-                                Toast.makeText(context, "Backup JSON copied to Clipboard!", Toast.LENGTH_LONG).show()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary, contentColor = DarkBackground),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp)
-                            .testTag("export_button")
+        // Space OS Backup / Restore dialogue Panel
+        if (showBackupDialog) {
+            Dialog(onDismissRequest = { showBackupDialog = false }) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = DeepSlateCard
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
-                        Text("Export Data OS (Copy JSON)")
-                    }
-
-                    HorizontalDivider(color = Color(0x33FFFFFF), modifier = Modifier.padding(vertical = 12.dp))
-
-                    OutlinedTextField(
-                        value = importText,
-                        onValueChange = { importText = it },
-                        label = { Text("Paste Import JSON here", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextSolidWhite,
-                            unfocusedTextColor = TextSolidWhite,
-                            focusedBorderColor = CyanPrimary,
-                            unfocusedBorderColor = Color(0x33FFFFFF)
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(110.dp)
-                            .testTag("import_text_field")
-                    )
-
-                    Button(
-                        onClick = {
-                            coroutineScope.launch {
-                                if (importText.trim().isNotEmpty()) {
-                                    val success = viewModel.importJson(importText)
-                                    if (success) {
-                                        Toast.makeText(context, "OS Loaded Successfully!", Toast.LENGTH_SHORT).show()
-                                        showBackupDialog = false
-                                        importText = ""
-                                    } else {
-                                        Toast.makeText(context, "Invalid Backup Structure", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = PurpleSecondary, contentColor = TextSolidWhite),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp)
-                            .testTag("import_button")
-                    ) {
-                        Text("Import & Restore")
-                    }
-
-                    TextButton(
-                        onClick = {
-                            viewModel.resetData()
-                            Toast.makeText(context, "All data reset to Class 12 Defaults!", Toast.LENGTH_SHORT).show()
-                            showBackupDialog = false
-                        },
-                        colors = ButtonDefaults.textButtonColors(contentColor = ErrorNeon),
-                        modifier = Modifier.testTag("reset_button")
-                    ) {
-                        Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
-                        Text("Reset strictly to initial layout")
-                    }
-
-                    TextButton(
-                        onClick = { showBackupDialog = false },
-                        colors = ButtonDefaults.textButtonColors(contentColor = TextSolidWhite)
-                    ) {
-                        Text("Cancel")
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ----------------------------------------------------
-// live banner showing clock and instant updates
-// ----------------------------------------------------
-@Composable
-fun LiveHeaderRow(
-    liveTime: String,
-    dateStr: String,
-    dailyProgress: Int,
-    currentTask: TimetableTask?,
-    nextTask: TimetableTask?
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp)
-            .glassCard(borderColor = Color(0x1A00E5FF), backgroundColor = Color(0x900E1726))
-            .padding(14.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = "L I V E   O S   C L O C K",
-                    color = CyanPrimary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    fontFamily = FontFamily.Monospace
-                )
-                Text(
-                    text = liveTime,
-                    color = TextSolidWhite,
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
-                )
-                Text(
-                    text = dateStr,
-                    color = TextMutedGray,
-                    fontSize = 12.sp,
-                )
-            }
-
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "D A I L Y   L O O P",
-                    color = PurpleSecondary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    fontFamily = FontFamily.Monospace
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(54.dp)) {
-                        CircularProgressIndicator(
-                            progress = { dailyProgress.toFloat() / 100f },
-                            color = CyanPrimary,
-                            strokeWidth = 5.dp,
-                            trackColor = Color(0x1EFFFFFF),
-                            modifier = Modifier.fillMaxSize()
+                        Text(
+                            "DATA OPERATING SYSTEM BACKUP",
+                            color = TextSolidWhite,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            modifier = Modifier.padding(bottom = 12.dp)
                         )
                         Text(
-                            "$dailyProgress%",
+                            "To comply with local security protocols, all actions are persistent on SQLite Room. You can export or import your data JSON backup package as an open-source standard block.",
+                            color = TextLightGray,
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextSolidWhite
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(bottom = 20.dp)
                         )
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                            Button(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        val backupJson = viewModel.exportJson()
+                                        clipboardManager.setText(AnnotatedString(backupJson))
+                                        Toast.makeText(context, "Backup JSON copied to Clipboard!", Toast.LENGTH_LONG).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary)
+                            ) {
+                                Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Export to Clipboard", fontSize = 11.sp, color = DarkBackground)
+                            }
+
+                            Button(
+                                onClick = { importText = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = PurpleAccent)
+                            ) {
+                                Icon(Icons.Filled.Publish, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Import JSON", fontSize = 11.sp, color = TextSolidWhite)
+                            }
+                        }
+
+                        if (importText) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            OutlinedTextField(
+                                value = importRawJson,
+                                onValueChange = { importRawJson = it },
+                                label = { Text("Paste JSON Backup", color = TextLightGray) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(100.dp)
+                                    .testTag("import_raw_json"),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = TextSolidWhite,
+                                    unfocusedTextColor = TextLightGray,
+                                    focusedBorderColor = CyanPrimary,
+                                    unfocusedBorderColor = TextLightGray
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        val ok = viewModel.importJson(importRawJson)
+                                        if (ok) {
+                                            Toast.makeText(context, "Operating System Reloaded Successfully!", Toast.LENGTH_SHORT).show()
+                                            showBackupDialog = false
+                                            importText = false
+                                        } else {
+                                            Toast.makeText(context, "Invalid Backup Json Format.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPositive)
+                            ) {
+                                Text("Verify & Restore Database", color = TextSolidWhite)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        TextButton(onClick = { showBackupDialog = false }) {
+                            Text("Close Dashboard Menu", color = TextLightGray)
+                        }
                     }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-        HorizontalDivider(color = Color(0x1F909CB4))
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("CURRENT PROCESS", color = TextMutedGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val indicatorColor = when (currentTask?.type) {
-                        "STUDY" -> TealAccent
-                        "PROGRAMMING" -> CyanPrimary
-                        else -> PurpleSecondary
-                    }
-                    Box(
-                        modifier = Modifier
-                            .padding(end = 6.dp)
-                            .size(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(if (currentTask != null) indicatorColor else Color.Gray)
-                    )
-                    Text(
-                        text = currentTask?.name ?: "Free or Buffer Time",
-                        color = TextSolidWhite,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                Text("NEXT UP", color = TextMutedGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    text = nextTask?.name ?: "No tasks left",
-                    color = TextSolidWhite,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (nextTask != null) {
-                    Text(nextTask.timeRange, color = CyanPrimary, fontSize = 11.sp)
                 }
             }
         }
@@ -448,594 +375,1116 @@ fun LiveHeaderRow(
 }
 
 // ----------------------------------------------------
-// SCREEN 1: DASHBOARD SCREEN
+// Welcome & Authenticaton Views (Local Storage Hashed Access)
 // ----------------------------------------------------
 @Composable
-fun DashboardScreen(
-    dailyProgress: Int,
-    studyHrs: Double,
-    progHrs: Double,
-    tasks: List<TimetableTask>,
-    goals: List<GoalMetric>,
-    viewModel: DashboardViewModel
-) {
-    val scrollState = rememberScrollState()
+fun AuthenticationScreen(viewModel: DashboardViewModel) {
+    val context = LocalContext.current
+    var isSignUpMode by remember { mutableStateOf(false) }
+    var isForgotMode by remember { mutableStateOf(false) }
 
-    val boardGoal = goals.find { it.category == "MAIN" } ?: GoalMetric("Score 85%+ in Class 12 Boards", 100.0, 0.0, "%", "MAIN")
-    val actualBoardProgress = boardGoal.currentValue
+    var usernameInput by remember { mutableStateOf("") }
+    var passwordInput by remember { mutableStateOf("") }
+    var challengeQuestionAnswer by remember { mutableStateOf("") }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(scrollState)
-            .padding(vertical = 8.dp)
+            .background(DarkBackground)
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
     ) {
-        // Goal Banner (Score 85% Board Exam Goal)
-        MainGoalBanner(boardGoal, actualBoardProgress)
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Core stats cards
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            StatsCard(
-                title = "Study Hours",
-                value = String.format(Locale.getDefault(), "%.1fh", studyHrs),
-                goal = "6.0h",
-                icon = Icons.Filled.MenuBook,
-                color = TealAccent,
-                modifier = Modifier.weight(1f)
-            )
-            StatsCard(
-                title = "Coding hours",
-                value = String.format(Locale.getDefault(), "%.1fh", progHrs),
-                goal = "3.0h",
-                icon = Icons.Filled.Terminal,
-                color = CyanPrimary,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Analytics Row with Graph (Study and habit trends)
-        Text(
-            "PROGRESS METRICS & OUTLOOK",
-            color = CyanPrimary,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 10.dp)
-        )
-
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(200.dp)
-                .glassCard()
-                .padding(14.dp)
+                .glassCard(),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column {
+            Icon(
+                Icons.Filled.AccountCircle,
+                contentDescription = null,
+                tint = CyanPrimary,
+                modifier = Modifier
+                    .size(64.dp)
+                    .padding(bottom = 8.dp)
+            )
+
+            Text(
+                "STUDENT LIFE OS IDENTITY ENGINE",
+                fontSize = 15.sp,
+                color = TextLightGray,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.5.sp,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+
+            Text(
+                if (isSignUpMode) "Register Secure Private Local Space" else if (isForgotMode) "Verification Recovery Control" else "Sign In Private Workspace",
+                fontSize = 18.sp,
+                color = TextSolidWhite,
+                fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier.padding(bottom = 20.dp)
+            )
+
+            OutlinedTextField(
+                value = usernameInput,
+                onValueChange = { usernameInput = it },
+                label = { Text("Private Username Key", color = TextLightGray) },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("auth_username"),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = TextSolidWhite,
+                    unfocusedTextColor = TextLightGray,
+                    focusedBorderColor = CyanPrimary,
+                    unfocusedBorderColor = TextLightGray
+                )
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (!isForgotMode) {
+                OutlinedTextField(
+                    value = passwordInput,
+                    onValueChange = { passwordInput = it },
+                    label = { Text("Password", color = TextLightGray) },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("auth_password"),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextSolidWhite,
+                        unfocusedTextColor = TextLightGray,
+                        focusedBorderColor = CyanPrimary,
+                        unfocusedBorderColor = TextLightGray
+                    )
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            if (isSignUpMode || isForgotMode) {
+                Text(
+                    "Challenge Question: What's your favorite board study subject?",
+                    color = TextLightGray,
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Start,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp)
+                )
+                OutlinedTextField(
+                    value = challengeQuestionAnswer,
+                    onValueChange = { challengeQuestionAnswer = it },
+                    label = { Text("Verification Answer", color = TextLightGray) },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("auth_challenge"),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextSolidWhite,
+                        unfocusedTextColor = TextLightGray,
+                        focusedBorderColor = CyanPrimary,
+                        unfocusedBorderColor = TextLightGray
+                    )
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            if (isForgotMode) {
+                OutlinedTextField(
+                    value = passwordInput,
+                    onValueChange = { passwordInput = it },
+                    label = { Text("Type New Password", color = TextLightGray) },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextSolidWhite,
+                        unfocusedTextColor = TextLightGray,
+                        focusedBorderColor = CyanPrimary,
+                        unfocusedBorderColor = TextLightGray
+                    )
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            Button(
+                onClick = {
+                    if (isSignUpMode) {
+                        viewModel.register(usernameInput, passwordInput, challengeQuestionAnswer) { success, msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                            if (success) isSignUpMode = false
+                        }
+                    } else if (isForgotMode) {
+                        viewModel.resetPassword(usernameInput, challengeQuestionAnswer, passwordInput) { success, msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                            if (success) isForgotMode = false
+                        }
+                    } else {
+                        viewModel.login(usernameInput, passwordInput) { success, msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("auth_submit_button"),
+                colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary)
+            ) {
+                Text(
+                    if (isSignUpMode) "Generate Secure Private Account" else if (isForgotMode) "Revise Password" else "Verify & Boot Operating System",
+                    fontWeight = FontWeight.Bold,
+                    color = DarkBackground
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                TextButton(onClick = {
+                    isSignUpMode = !isSignUpMode
+                    isForgotMode = false
+                }) {
+                    Text(
+                        if (isSignUpMode) "Have account? Sign In" else "Create Private OS Account",
+                        color = CyanPrimary,
+                        fontSize = 12.sp
+                    )
+                }
+
+                if (!isSignUpMode) {
+                    TextButton(onClick = {
+                        isForgotMode = !isForgotMode
+                    }) {
+                        Text(
+                            if (isForgotMode) "Cancel Recovery" else "Forgot Key?",
+                            color = CrimsonAlert,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Lock, contentDescription = null, tint = EmeraldPositive, modifier = Modifier.size(12.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    "All credentials are securely hashed locally. Absolute data isolation.",
+                    color = EmeraldPositive,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+    }
+}
+
+// ----------------------------------------------------
+// Setup Wizard screen for profile init
+// ----------------------------------------------------
+@Composable
+fun SetupWizardScreen(viewModel: DashboardViewModel) {
+    val commerceOptions = listOf("Accounts", "Mathematics", "Economics", "OCM", "Secretarial Practice", "English", "Hindi")
+    val selectedSubjects = remember { mutableStateListOf("Accounts", "Mathematics", "Economics") }
+    var targetStudyHoursInput by remember { mutableStateOf("80.0") }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(DarkBackground)
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .glassCard(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = AmberWarm, modifier = Modifier.size(48.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "STUDENT OS SETUP WIZARD",
+                color = TextSolidWhite,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp
+            )
+            Text(
+                "Configure your Board Courses & Target metrics. This seeds localized subject chapter status and milestone metrics. Zero fabricated stats.",
+                color = TextLightGray,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                "Choose Your Active Board Subjects:",
+                color = TextSolidWhite,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            LazyColumn(modifier = Modifier.height(160.dp)) {
+                items(commerceOptions) { subject ->
+                    val isChecked = selectedSubjects.contains(subject)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (isChecked) selectedSubjects.remove(subject)
+                                else selectedSubjects.add(subject)
+                            }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = isChecked,
+                            onCheckedChange = null,
+                            colors = CheckboxDefaults.colors(checkedColor = CyanPrimary)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(subject, color = TextSolidWhite, fontSize = 13.sp)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedTextField(
+                value = targetStudyHoursInput,
+                onValueChange = { targetStudyHoursInput = it },
+                label = { Text("Monthly Focus Target Study (Hours)", color = TextLightGray) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().testTag("wizard_hours"),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = TextSolidWhite,
+                    unfocusedTextColor = TextLightGray,
+                    focusedBorderColor = CyanPrimary,
+                    unfocusedBorderColor = TextLightGray
+                )
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Button(
+                onClick = {
+                    val targetDouble = targetStudyHoursInput.toDoubleOrNull() ?: 80.0
+                    viewModel.completeWizard(selectedSubjects.toList(), targetDouble)
+                },
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPositive)
+            ) {
+                Text("Initialize Operating System", color = TextSolidWhite, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+// ----------------------------------------------------
+// 1. Interactive Dashboard View with XP levels & Logs
+// ----------------------------------------------------
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun DashboardScreen(
+    viewModel: DashboardViewModel,
+    userObj: UserLocal,
+    dailyProgress: Int,
+    liveTime: String,
+    dateStr: String,
+    sessionList: List<StudySession>,
+    journalList: List<JournalEntry>,
+    friendsList: List<Friend>,
+    goalList: List<GoalMetric>
+) {
+    var showStudyLogDialog by remember { mutableStateOf(false) }
+    var showJournalDialog by remember { mutableStateOf(false) }
+
+    val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val isGeneratingAi by viewModel.isGeneratingAiCoach.collectAsStateWithLifecycle()
+    val coachFeedback by viewModel.aiCoachFeedback.collectAsStateWithLifecycle()
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Space OS Cosmic clock title Row
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        "STUDENT DECK",
+                        color = TextLightGray,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        letterSpacing = 1.5.sp
+                    )
+                    Text(
+                        "COMMERCE SYSTEM SECURE",
+                        color = TextSolidWhite,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 20.sp
+                    )
+                }
+
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        liveTime,
+                        color = CyanPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(
+                        dateStr,
+                        color = TextLightGray,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+        }
+
+        // LEVEL GAMIFICATION METER
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .glassCard(borderColor = PurpleAccent.copy(alpha = 0.5f))
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Daily Study Hours Projection", color = TextSolidWhite, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Box(
-                        modifier = Modifier
-                            .glassCard(borderColor = Color(0x40FFFFFF), backgroundColor = Color(0x33000000))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text("Accounts • Maths • Python", color = CyanPrimary, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Custom Draw Analytics Graph
-                Canvas(modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f)) {
-                    val width = size.width
-                    val height = size.height
-
-                    // Draw grid axes
-                    drawLine(
-                        color = Color(0x22FFFFFF),
-                        start = Offset(0f, height),
-                        end = Offset(width, height),
-                        strokeWidth = 2f
-                    )
-
-                    // Dummy points representing study hours of the past 7 days (Mon, Tue, Wed, Thu, Fri, Sat, Sun)
-                    val dataPoints = listOf(4.5f, 5.2f, 6.0f, 3.8f, 7.1f, 8.0f, studyHrs.toFloat())
-                    val maxVal = 10f
-
-                    val stepX = width / (dataPoints.size - 1)
-                    val points = dataPoints.mapIndexed { idx, valHours ->
-                        val x = idx * stepX
-                        val y = height - (valHours / maxVal) * height
-                        Offset(x, y)
-                    }
-
-                    // Draw Area Gradient
-                    val path = Path().apply {
-                        moveTo(0f, height)
-                        points.forEachIndexed { index, offset ->
-                            if (index == 0) lineTo(offset.x, offset.y)
-                            else lineTo(offset.x, offset.y)
-                        }
-                        lineTo(width, height)
-                        close()
-                    }
-
-                    drawPath(
-                        path = path,
-                        brush = Brush.verticalGradient(
-                            colors = listOf(Color(0x5500E5FF), Color.Transparent)
-                        )
-                    )
-
-                    // Draw connecting line
-                    for (i in 0 until points.size - 1) {
-                        drawLine(
-                            color = CyanPrimary,
-                            start = points[i],
-                            end = points[i + 1],
-                            strokeWidth = 4f,
-                            cap = StrokeCap.Round
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.EmojiEvents, contentDescription = null, tint = AmberWarm, modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Level ${userObj.level} Warrior",
+                            color = TextSolidWhite,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 16.sp
                         )
                     }
 
-                    // Draw values & dots
-                    points.forEachIndexed { i, offset ->
-                        drawCircle(
-                            color = if (i == points.size - 1) PurpleSecondary else CyanPrimary,
-                            radius = 6f,
-                            center = offset
-                        )
+                    Row {
+                        Icon(Icons.Filled.MonetizationOn, contentDescription = null, tint = AmberWarm, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("${userObj.coins} Gold Coins", color = AmberWarm, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
+
+                // XP progress bar
+                val levelUpThreshold = userObj.level * 120
+                val progressPercent = (userObj.xp.toFloat() / levelUpThreshold).coerceIn(0f, 1f)
+
+                LinearProgressIndicator(
+                    progress = { progressPercent },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(10.dp)
+                        .clip(RoundedCornerShape(5.dp)),
+                    color = PurpleAccent,
+                    trackColor = DarkBackground
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    val labels = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Today")
-                    labels.forEach {
-                        Text(it, color = TextMutedGray, fontSize = 10.sp)
+                    Text("XP: ${userObj.xp} / $levelUpThreshold", color = TextLightGray, fontSize = 11.sp)
+                    Text("Streak Counter: ${userObj.streak} Days 🔥", color = AmberWarm, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        // DAILY ACTION BUTTONS ROW
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Button(
+                    onClick = { showStudyLogDialog = true },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .testTag("log_study_button"),
+                    colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Filled.HistoryEdu, contentDescription = null, tint = DarkBackground)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Log Study", color = DarkBackground, fontWeight = FontWeight.Bold)
+                }
+
+                Button(
+                    onClick = { showJournalDialog = true },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .testTag("log_journal_button"),
+                    colors = ButtonDefaults.buttonColors(containerColor = PurpleAccent),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Filled.EditNote, contentDescription = null, tint = TextSolidWhite)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Daily Journal", color = TextSolidWhite, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        // ACTIVE TIMETABLE TARGET (Current vs Next task)
+        item {
+            val currentAndNextTaskState by viewModel.currentAndNextTask.collectAsStateWithLifecycle()
+            val (current, next) = currentAndNextTaskState
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .glassCard()
+            ) {
+                Text(
+                    "CLOCK WORK SCHEDULER",
+                    color = TextLightGray,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.sp
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Active Track:", color = TextLightGray, fontSize = 11.sp)
+                        Text(
+                            current?.name ?: "No scheduled items active.",
+                            color = if (current != null) CyanPrimary else TextLightGray,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Text(current?.timeRange ?: "Free Block", color = TextLightGray, fontSize = 11.sp)
+                    }
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Coming Up:", color = TextLightGray, fontSize = 11.sp)
+                        Text(
+                            next?.name ?: "No upcoming tasks.",
+                            color = TextSolidWhite,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Text(next?.timeRange ?: "", color = TextLightGray, fontSize = 11.sp)
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        // REAL ANALYTICS WIDGETS
+        item {
+            val totalHours by viewModel.totalStudyHoursSpent.collectAsStateWithLifecycle()
+            val certsCount by viewModel.totalChaptersCompletedCount.collectAsStateWithLifecycle()
+            val testsAverage by viewModel.recentAverageTestScores.collectAsStateWithLifecycle()
+            val codingHours by viewModel.programmingHoursCompleted.collectAsStateWithLifecycle()
 
-        // Recovery Queue block (Skipped tasks and dynamic actions)
-        val skippedTasks = tasks.filter { it.status == "SKIPPED" }
-        RecoveryQueueSection(skippedTasks, viewModel)
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Secondary goals visual tracker
-        SecondaryGoalsSection(goals, viewModel)
-
-        // Bottom space
-        Spacer(modifier = Modifier.height(16.dp))
-    }
-}
-
-@Composable
-fun MainGoalBanner(goal: GoalMetric, actualBoardProgress: Double) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .glassCard(borderColor = TealAccent, backgroundColor = Color(0xFF07241F))
-            .padding(16.dp)
-    ) {
-        Column {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .glassCard()
             ) {
-                Column {
-                    Text(
-                        "MAIN MISSION TARGET",
-                        color = TealAccent,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                    Text(
-                        goal.name,
-                        color = TextSolidWhite,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                Text(
+                    "GENUINE TRACKING STATISTICS (ZERO GENERATED FABRICATIONS)",
+                    color = TextLightGray,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 10.sp,
+                    letterSpacing = 0.5.sp
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(DarkBackground, RoundedCornerShape(12.dp))
+                            .padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("Focused Study", color = TextLightGray, fontSize = 11.sp)
+                        Text("${String.format("%.1f", totalHours)} Hrs", color = CyanPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(DarkBackground, RoundedCornerShape(12.dp))
+                            .padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("Code Practice", color = TextLightGray, fontSize = 11.sp)
+                        Text("${String.format("%.1f", codingHours)} Hrs", color = PurpleAccent, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    }
                 }
 
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(TealAccent)
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(DarkBackground, RoundedCornerShape(12.dp))
+                            .padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("Chs. Mastered", color = TextLightGray, fontSize = 11.sp)
+                        Text("$certsCount Chapters", color = EmeraldPositive, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(DarkBackground, RoundedCornerShape(12.dp))
+                            .padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("Mock Score Avg.", color = TextLightGray, fontSize = 11.sp)
+                        Text(if (testsAverage > 0.0) "${String.format("%.1f", testsAverage)}%" else "No tests log", color = AmberWarm, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    }
+                }
+            }
+        }
+
+        // DOCK AI STUDY COACH ADVISORY
+        item {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .glassCard(borderColor = PurpleAccent.copy(alpha = 0.6f))
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Psychology, contentDescription = null, tint = CyanPrimary)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            "AI STUDY ADVOCATE COACH",
+                            color = TextSolidWhite,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            letterSpacing = 1.sp
+                        )
+                    }
+
+                    Button(
+                        onClick = { viewModel.generateAiCoachFeedback() },
+                        enabled = !isGeneratingAi,
+                        modifier = Modifier.testTag("trigger_ai_coach"),
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(if (isGeneratingAi) "Analyzing..." else "Ask Coach", color = DarkBackground, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = coachFeedback,
+                    color = TextSolidWhite,
+                    fontSize = 12.sp,
+                    fontFamily = FontFamily.SansSerif,
+                    lineHeight = 18.sp
+                )
+            }
+        }
+
+        // SOCIAL ACCOUNTABILITY SCOREBOARD
+        item {
+            var showAddFriendDialog by remember { mutableStateOf(false) }
+            var friendInput by remember { mutableStateOf("") }
+            var privatePrivacySetting by remember { mutableStateOf(false) }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .glassCard()
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "TARGET 85%+",
-                        color = DarkBackground,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Showing visual progression bar
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                LinearProgressIndicator(
-                    progress = { actualBoardProgress.toFloat() / 100f },
-                    color = TealAccent,
-                    trackColor = Color(0x33FFFFFF),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(10.dp)
-                        .clip(RoundedCornerShape(5.dp))
-                )
-                Text(
-                    text = String.format(Locale.getDefault(), "%.1f%%", actualBoardProgress),
-                    color = TextSolidWhite,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                "Calculated based on Chapter progress across Board Subjects. Complete chapters to raise percentage!",
-                color = TextMutedGray,
-                fontSize = 11.sp
-            )
-        }
-    }
-}
-
-@Composable
-fun StatsCard(
-    title: String,
-    value: String,
-    goal: String,
-    icon: ImageVector,
-    color: Color,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .glassCard(borderColor = color.copy(alpha = 0.3f), backgroundColor = CardGlassSurface)
-            .padding(14.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(title.uppercase(), color = TextMutedGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(value, color = TextSolidWhite, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(2.dp))
-                Text("Target: $goal", color = color, fontSize = 11.sp)
-            }
-
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = color,
-                modifier = Modifier.size(32.dp)
-            )
-        }
-    }
-}
-
-@Composable
-fun RecoveryQueueSection(skippedTasks: List<TimetableTask>, viewModel: DashboardViewModel) {
-    var selectedTaskForReschedule by remember { mutableStateOf<TimetableTask?>(null) }
-    var newTimeInput by remember { mutableStateOf("") }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .glassCard(borderColor = ErrorNeon.copy(alpha = 0.4f), backgroundColor = Color(0xFF1F1116))
-            .padding(16.dp)
-    ) {
-        Column {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Warning, contentDescription = null, tint = ErrorNeon, modifier = Modifier.padding(end = 6.dp))
-                    Text(
-                        "RECOVERY QUEUE (${skippedTasks.size} Skipped)",
-                        color = ErrorNeon,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                if (skippedTasks.isNotEmpty()) {
-                    Text(
-                        "Needs Action",
-                        fontSize = 11.sp,
+                        "STUDY MATES ACCOUNTABILITY SCOREBOARD",
+                        color = TextLightGray,
                         fontWeight = FontWeight.Bold,
-                        color = TextSolidWhite,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(ErrorNeon)
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                        fontSize = 10.sp,
+                        letterSpacing = 0.5.sp
                     )
+
+                    IconButton(onClick = { showAddFriendDialog = true }) {
+                        Icon(Icons.Filled.PersonAdd, contentDescription = "Add mate", tint = CyanPrimary, modifier = Modifier.size(18.dp))
+                    }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-            if (skippedTasks.isEmpty()) {
-                Text(
-                    "Pristine state! No skipped or missed sessions in queue. Keep up the high discipline!",
-                    color = TextMutedGray,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-            } else {
-                skippedTasks.forEach { task ->
+                // simulated self user stats item on scoreboard
+                val totalStudyHours by viewModel.totalStudyHoursSpent.collectAsStateWithLifecycle()
+                val masterChCount by viewModel.totalChaptersCompletedCount.collectAsStateWithLifecycle()
+
+                val sortedMates = (friendsList + Friend(
+                    friendUsername = "${userObj.username} (You)",
+                    xp = userObj.xp + (userObj.level * 120),
+                    streak = userObj.streak,
+                    chaptersCompleted = masterChCount,
+                    weeklyHours = totalStudyHours,
+                    isPending = false
+                )).sortedByDescending { it.xp }
+
+                sortedMates.forEachIndexed { idx, friend ->
+                    val isSelf = friend.friendUsername.contains("(You)")
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 6.dp)
-                            .glassCard(borderColor = Color(0x33FFFFFF), backgroundColor = Color(0x22000000))
-                            .padding(10.dp),
+                            .padding(vertical = 4.dp)
+                            .background(if (isSelf) PurpleAccent.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(8.dp))
+                            .padding(8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(task.name, color = TextSolidWhite, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text("Missed ${task.timeRange} session", color = TextMutedGray, fontSize = 11.sp)
-                        }
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            // Recover Button
-                            IconButton(
-                                onClick = {
-                                    viewModel.updateTask(task.copy(status = "COMPLETED"))
-                                },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(TealAccent)
-                            ) {
-                                Icon(Icons.Filled.Check, contentDescription = "Recover Complete", tint = DarkBackground, modifier = Modifier.size(18.dp))
-                            }
-
-                            // Reschedule button
-                            IconButton(
-                                onClick = {
-                                    selectedTaskForReschedule = task
-                                    newTimeInput = task.timeRange
-                                },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(CyanPrimary)
-                            ) {
-                                Icon(Icons.Filled.Schedule, contentDescription = "Reschedule", tint = DarkBackground, modifier = Modifier.size(18.dp))
-                            }
-
-                            // Delete button
-                            IconButton(
-                                onClick = {
-                                    viewModel.deleteTask(task)
-                                },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(ErrorNeon)
-                            ) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = TextSolidWhite, modifier = Modifier.size(18.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "#${idx + 1} ",
+                                color = if (idx == 0) AmberWarm else TextLightGray,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                            Column {
+                                Text(
+                                    friend.friendUsername,
+                                    color = if (isSelf) CyanPrimary else TextSolidWhite,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    if (friend.privacySetting == "PRIVATE" && !isSelf) "Privacy: Scores Only" else "🔥 ${friend.streak} Day | 📚 ${friend.chaptersCompleted} Mastered",
+                                    color = TextLightGray,
+                                    fontSize = 10.sp
+                                )
                             }
                         }
-                    }
-                }
-            }
-        }
-    }
 
-    // Reschedule dialog
-    if (selectedTaskForReschedule != null) {
-        Dialog(onDismissRequest = { selectedTaskForReschedule = null }) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .glassCard()
-                    .padding(16.dp),
-                color = CardGlassSurface
-            ) {
-                Column {
-                    Text(
-                        "Reschedule Skipped Task",
-                        fontWeight = FontWeight.Bold,
-                        color = CyanPrimary,
-                        fontSize = 16.sp
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedTextField(
-                        value = newTimeInput,
-                        onValueChange = { newTimeInput = it },
-                        label = { Text("New Time Range", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextSolidWhite,
-                            unfocusedTextColor = TextSolidWhite,
-                            focusedBorderColor = CyanPrimary,
-                            unfocusedBorderColor = Color(0x33FFFFFF)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(onClick = { selectedTaskForReschedule = null }) {
-                            Text("Cancel", color = TextSolidWhite)
-                        }
-                        Button(
-                            onClick = {
-                                val t = selectedTaskForReschedule
-                                if (t != null) {
-                                    viewModel.updateTask(t.copy(timeRange = newTimeInput, status = "PENDING"))
-                                }
-                                selectedTaskForReschedule = null
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary)
-                        ) {
-                            Text("Save", color = DarkBackground)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun SecondaryGoalsSection(goals: List<GoalMetric>, viewModel: DashboardViewModel) {
-    val secondaryGoals = goals.filter { it.category == "SECONDARY" }
-    var goalToEdit by remember { mutableStateOf<GoalMetric?>(null) }
-    var newValueInput by remember { mutableStateOf("") }
-
-    Column {
-        Text(
-            "SECONDARY TARGETS & DISCIPLINE",
-            color = CyanPrimary,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 10.dp)
-        )
-
-        secondaryGoals.forEach { goal ->
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .glassCard()
-                    .clickable {
-                        goalToEdit = goal
-                        newValueInput = goal.currentValue.toString()
-                    }
-                    .padding(14.dp)
-            ) {
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
                         Text(
-                            goal.name,
-                            color = TextSolidWhite,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
-                        )
-                        Text(
-                            "${goal.currentValue.toInt()} / ${goal.targetValue.toInt()} ${goal.unit}",
-                            color = CyanPrimary,
+                            if (friend.privacySetting == "PRIVATE" && !isSelf) "${friend.xp} XP" else "${String.format("%.1f", friend.weeklyHours)} Hrs | ${friend.xp} XP",
+                            color = if (idx == 0) AmberWarm else TextLightGray,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
+                            fontSize = 12.sp
                         )
                     }
+                }
 
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Privacy Switch toggles
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Scoreboard Mode Option:", color = TextLightGray, fontSize = 11.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (privatePrivacySetting) "Show Scores Only" else "Full Dynamic progress", color = CyanPrimary, fontSize = 11.sp)
+                        Switch(
+                            checked = privatePrivacySetting,
+                            onCheckedChange = { privatePrivacySetting = it },
+                            colors = SwitchDefaults.colors(checkedThumbColor = CyanPrimary)
+                        )
+                    }
+                }
+
+                if (showAddFriendDialog) {
+                    Dialog(onDismissRequest = { showAddFriendDialog = false }) {
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = DeepSlateCard,
+                            modifier = Modifier.padding(16.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text("Add Accountability Mate", color = TextSolidWhite, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                OutlinedTextField(
+                                    value = friendInput,
+                                    onValueChange = { friendInput = it },
+                                    label = { Text("Friend profile ID or username", color = TextLightGray) },
+                                    modifier = Modifier.fillMaxWidth().testTag("add_friend_input"),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedTextColor = TextSolidWhite,
+                                        unfocusedTextColor = TextLightGray,
+                                        focusedBorderColor = CyanPrimary,
+                                        unfocusedBorderColor = TextLightGray
+                                    )
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Button(
+                                    onClick = {
+                                        if (friendInput.isNotEmpty()) {
+                                            viewModel.sendFriendRequestSimulated(friendInput)
+                                            friendInput = ""
+                                            showAddFriendDialog = false
+                                            Toast.makeText(context, "Partner connection invite generated!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary)
+                                ) {
+                                    Text("Send Invite Code")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // PENDING COMPANIONS REJECT / INCOMING REQUEST PANEL
+        val pendings = friendsList.filter { it.isPending }
+        if (pendings.isNotEmpty()) {
+            item {
+                Column(modifier = Modifier.fillMaxWidth().glassCard(borderColor = CrimsonAlert)) {
+                    Text("Pending accountability request connection code:", color = CrimsonAlert, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     Spacer(modifier = Modifier.height(8.dp))
-
-                    LinearProgressIndicator(
-                        progress = {
-                            val ratio = goal.currentValue.toFloat() / goal.targetValue.toFloat()
-                            ratio.coerceIn(0f, 1f)
-                        },
-                        color = PurpleSecondary,
-                        trackColor = Color(0x22FFFFFF),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp))
-                    )
+                    pendings.forEach { p ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(p.friendUsername, color = TextSolidWhite, fontSize = 13.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = { viewModel.acceptFriendRequest(p.friendUsername) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPositive),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text("Accept", fontSize = 10.sp, color = TextSolidWhite)
+                                }
+                                Button(
+                                    onClick = { viewModel.declineFriendRequest(p.friendUsername) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = CrimsonAlert),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text("Deny", fontSize = 10.sp, color = TextSolidWhite)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
-    if (goalToEdit != null) {
-        Dialog(onDismissRequest = { goalToEdit = null }) {
+    // 1.1 Study Logging dialogue block
+    if (showStudyLogDialog) {
+        var logSubject by remember { mutableStateOf("Accounts") }
+        var logChapter by remember { mutableStateOf("") }
+        var logDurationInput by remember { mutableStateOf("1.5") }
+        var logConfidence by remember { mutableStateOf(3) }
+        var logIsRevision by remember { mutableStateOf(false) }
+        var testScoreInput by remember { mutableStateOf("") }
+        var logNotesInput by remember { mutableStateOf("") }
+
+        val subjectsSelection = listOf("Accounts", "Mathematics", "Economics", "OCM", "Secretarial Practice", "English", "Hindi")
+
+        Dialog(onDismissRequest = { showStudyLogDialog = false }) {
             Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = DeepSlateCard,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .glassCard()
-                    .padding(16.dp),
-                color = CardGlassSurface
+                    .padding(8.dp)
             ) {
-                Column {
-                    Text(
-                        "Update Progress: ${goalToEdit?.name}",
-                        fontWeight = FontWeight.Bold,
-                        color = CyanPrimary,
-                        fontSize = 16.sp
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedTextField(
-                        value = newValueInput,
-                        onValueChange = { newValueInput = it },
-                        label = { Text("Current Score / Value (${goalToEdit?.unit})", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextSolidWhite,
-                            unfocusedTextColor = TextSolidWhite,
-                            focusedBorderColor = CyanPrimary,
-                            unfocusedBorderColor = Color(0x33FFFFFF)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(onClick = { goalToEdit = null }) {
-                            Text("Cancel", color = TextSolidWhite)
+                LazyColumn(modifier = Modifier.padding(16.dp)) {
+                    item {
+                        Text(
+                            "LOG REAL STUDY SESSION",
+                            color = TextSolidWhite,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+                        
+                        Text("Subject Course Selection:", color = TextLightGray, fontSize = 11.sp)
+                        LazyRow(modifier = Modifier.padding(vertical = 6.dp)) {
+                            items(subjectsSelection) { sub ->
+                                val isSelected = logSubject == sub
+                                Box(
+                                    modifier = Modifier
+                                        .padding(end = 6.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSelected) CyanPrimary else DarkBackground)
+                                        .clickable { logSubject = sub }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text(sub, color = if (isSelected) DarkBackground else TextSolidWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        OutlinedTextField(
+                            value = logChapter,
+                            onValueChange = { logChapter = it },
+                            label = { Text("Chapter Topic Name", color = TextLightGray) },
+                            modifier = Modifier.fillMaxWidth().testTag("log_chapter_input"),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TextSolidWhite,
+                                unfocusedTextColor = TextLightGray,
+                                focusedBorderColor = CyanPrimary,
+                                unfocusedBorderColor = TextLightGray
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        OutlinedTextField(
+                            value = logDurationInput,
+                            onValueChange = { logDurationInput = it },
+                            label = { Text("Duration spent (Hours)", color = TextLightGray) },
+                            modifier = Modifier.fillMaxWidth().testTag("log_duration_input"),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TextSolidWhite,
+                                unfocusedTextColor = TextLightGray,
+                                focusedBorderColor = CyanPrimary,
+                                unfocusedBorderColor = TextLightGray
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text("Performance Confidence Rating (1 to 5):", color = TextLightGray, fontSize = 11.sp)
+                        Row(modifier = Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            (1..5).forEach { rate ->
+                                val isSelected = logConfidence == rate
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSelected) AmberWarm else DarkBackground)
+                                        .clickable { logConfidence = rate }
+                                        .padding(8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(rate.toString(), color = TextSolidWhite, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = logIsRevision, onCheckedChange = { logIsRevision = it }, colors = CheckboxDefaults.colors(checkedColor = CyanPrimary))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("This is a strategic review/revision session", color = TextSolidWhite, fontSize = 12.sp)
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        OutlinedTextField(
+                            value = testScoreInput,
+                            onValueChange = { testScoreInput = it },
+                            label = { Text("Associated Test Score % (E.g. 85, Optional)", color = TextLightGray) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TextSolidWhite,
+                                unfocusedTextColor = TextLightGray,
+                                focusedBorderColor = CyanPrimary,
+                                unfocusedBorderColor = TextLightGray
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        OutlinedTextField(
+                            value = logNotesInput,
+                            onValueChange = { logNotesInput = it },
+                            label = { Text("Study review notes...", color = TextLightGray) },
+                            modifier = Modifier.fillMaxWidth().height(80.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = TextSolidWhite,
+                                unfocusedTextColor = TextLightGray,
+                                focusedBorderColor = CyanPrimary,
+                                unfocusedBorderColor = TextLightGray
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
                         Button(
                             onClick = {
-                                val g = goalToEdit
-                                val doubleVal = newValueInput.toDoubleOrNull()
-                                if (g != null && doubleVal != null) {
-                                    viewModel.updateGoal(g.name, doubleVal, g.targetValue, g.unit)
+                                if (logChapter.isEmpty()) {
+                                    Toast.makeText(context, "Please enter chapter name topic.", Toast.LENGTH_SHORT).show()
+                                    return@Button
                                 }
-                                goalToEdit = null
+                                val duration = logDurationInput.toDoubleOrNull() ?: 1.0
+                                val scoreDouble = testScoreInput.toDoubleOrNull()
+                                viewModel.logStudySession(
+                                    subject = logSubject,
+                                    chapter = logChapter,
+                                    durationHrs = duration,
+                                    confidence = logConfidence,
+                                    notes = logNotesInput,
+                                    isRevision = logIsRevision,
+                                    examScore = scoreDouble
+                                )
+                                showStudyLogDialog = false
+                                Toast.makeText(context, "Study Session securely logged! XP awarded.", Toast.LENGTH_SHORT).show()
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary)
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPositive)
                         ) {
-                            Text("Update", color = DarkBackground)
+                            Text("Secure Session Log", color = TextSolidWhite, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        TextButton(onClick = { showStudyLogDialog = false }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Discard", color = CrimsonAlert)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 1.2 Learning Journal dialogue block
+    if (showJournalDialog) {
+        var inputLearned by remember { mutableStateOf("") }
+        var inputMistakes by remember { mutableStateOf("") }
+        var inputConfused by remember { mutableStateOf("") }
+        var inputRevise by remember { mutableStateOf("") }
+        var inputWin by remember { mutableStateOf("") }
+
+        Dialog(onDismissRequest = { showJournalDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = DeepSlateCard,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp)
+            ) {
+                LazyColumn(modifier = Modifier.padding(16.dp)) {
+                    item {
+                        Text(
+                            "DAILY LEARNING REFLECTION",
+                            color = TextSolidWhite,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        Text(
+                            "Secure daily evaluation journal. High-impact reflection questions stored locally.",
+                            color = TextLightGray,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = inputLearned,
+                            onValueChange = { inputLearned = it },
+                            label = { Text("What did I learn today?", color = TextLightGray) },
+                            modifier = Modifier.fillMaxWidth().height(70.dp).testTag("journal_q1"),
+                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextLightGray)
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        OutlinedTextField(
+                            value = inputMistakes,
+                            onValueChange = { inputMistakes = it },
+                            label = { Text("What mistakes did I make?", color = TextLightGray) },
+                            modifier = Modifier.fillMaxWidth().height(70.dp).testTag("journal_q2"),
+                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextLightGray)
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        OutlinedTextField(
+                            value = inputConfused,
+                            onValueChange = { inputConfused = it },
+                            label = { Text("What confused me the most?", color = TextLightGray) },
+                            modifier = Modifier.fillMaxWidth().height(70.dp).testTag("journal_q3"),
+                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextLightGray)
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        OutlinedTextField(
+                            value = inputRevise,
+                            onValueChange = { inputRevise = it },
+                            label = { Text("What topics should I revise?", color = TextLightGray) },
+                            modifier = Modifier.fillMaxWidth().height(70.dp).testTag("journal_q4"),
+                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextLightGray)
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        OutlinedTextField(
+                            value = inputWin,
+                            onValueChange = { inputWin = it },
+                            label = { Text("What was my major win today?", color = TextLightGray) },
+                            modifier = Modifier.fillMaxWidth().height(70.dp).testTag("journal_q5"),
+                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextLightGray)
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Button(
+                            onClick = {
+                                if (inputLearned.isEmpty() || inputWin.isEmpty()) {
+                                    Toast.makeText(context, "Please answer at least lessons learned and win.", Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
+                                viewModel.addJournalEntry(
+                                    learned = inputLearned,
+                                    mistakes = inputMistakes,
+                                    confused = inputConfused,
+                                    revise = inputRevise,
+                                    win = inputWin
+                                )
+                                showJournalDialog = false
+                                Toast.makeText(context, "Reflection filed permanently! streak and XP logged.", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPositive)
+                        ) {
+                            Text("File Daily Journal", color = TextSolidWhite, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        TextButton(onClick = { showJournalDialog = false }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Discard", color = CrimsonAlert)
                         }
                     }
                 }
@@ -1045,413 +1494,220 @@ fun SecondaryGoalsSection(goals: List<GoalMetric>, viewModel: DashboardViewModel
 }
 
 // ----------------------------------------------------
-// SCREEN 2: TIMETABLE SCREEN
+// 2. Timetable Management (Edit, Skip, Reprioritize)
 // ----------------------------------------------------
 @Composable
 fun TimetableScreen(tasks: List<TimetableTask>, viewModel: DashboardViewModel) {
-    val context = LocalContext.current
     var showAddTaskDialog by remember { mutableStateOf(false) }
-    var selectedTaskForEdit by remember { mutableStateOf<TimetableTask?>(null) }
-
-    // Dialogue input states
     var taskNameInput by remember { mutableStateOf("") }
-    var taskTimeInput by remember { mutableStateOf("") }
-    var taskTypeInput by remember { mutableStateOf("STUDY") }
+    var taskTimeInput by remember { mutableStateOf("4:00 PM - 5:30 PM") }
+    var taskCategory by remember { mutableStateOf("STUDY") }
     var taskNotesInput by remember { mutableStateOf("") }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "SMART TIMETABLE & DAILY LOOP",
-                color = CyanPrimary,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
-            )
+    val context = LocalContext.current
 
-            Button(
-                onClick = {
-                    taskNameInput = ""
-                    taskTimeInput = ""
-                    taskTypeInput = "STUDY"
-                    taskNotesInput = ""
-                    showAddTaskDialog = true
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary),
-                modifier = Modifier
-                    .height(36.dp)
-                    .testTag("add_task_button")
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Filled.Add, contentDescription = null, tint = DarkBackground, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Add", color = DarkBackground, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Column {
+                    Text("DYNAMIC SCHEDULER", color = TextLightGray, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("ACTIVE ROTATIONS", color = TextSolidWhite, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
+                }
+
+                Button(
+                    onClick = { showAddTaskDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary)
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null, tint = DarkBackground)
+                    Text("Add Row", color = DarkBackground, fontWeight = FontWeight.Bold)
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        // Missed tasks recovery prompt section
+        val missedTasks = tasks.filter { it.status == "SKIPPED" || it.status == "MOVED_TOMORROW" }
+        if (missedTasks.isNotEmpty()) {
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .glassCard(borderColor = CrimsonAlert)
+                ) {
+                    Text("MISSED WORK RECOVERY QUEUE", color = CrimsonAlert, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("Overdue or skipped slots are parked here. Tackle them to earn double XP!", color = TextLightGray, fontSize = 11.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    missedTasks.forEach { task ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(task.name, color = TextSolidWhite, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text(task.timeRange, color = TextLightGray, fontSize = 11.sp)
+                            }
 
-        if (tasks.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("No tasks populated. Insert default elements!", color = TextMutedGray)
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f)
-                    .testTag("timetable_list"),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 16.dp)
-            ) {
-                items(tasks, key = { it.id }) { task ->
-                    TimetableRowItem(
-                        task = task,
-                        onAction = { action ->
-                            when (action) {
-                                "COMPLETE" -> viewModel.updateTask(task.copy(status = "COMPLETED"))
-                                "SKIP" -> viewModel.updateTask(task.copy(status = "SKIPPED"))
-                                "TOMORROW" -> {
-                                    viewModel.updateTask(task.copy(status = "MOVED_TOMORROW"))
-                                    Toast.makeText(context, "Task shifted to tomorrow", Toast.LENGTH_SHORT).show()
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = { viewModel.updateTask(task.copy(status = "COMPLETED")) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPositive),
+                                    contentPadding = PaddingValues(horizontal = 8.dp)
+                                ) {
+                                    Text("Re-Do", fontSize = 10.sp, color = TextSolidWhite)
                                 }
-                                "EDIT" -> {
-                                    taskNameInput = task.name
-                                    taskTimeInput = task.timeRange
-                                    taskTypeInput = task.type
-                                    taskNotesInput = task.notes
-                                    selectedTaskForEdit = task
+                                Button(
+                                    onClick = { viewModel.deleteTask(task) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = CrimsonAlert),
+                                    contentPadding = PaddingValues(horizontal = 8.dp)
+                                ) {
+                                    Text("Discard", fontSize = 10.sp, color = TextSolidWhite)
                                 }
-                                "DELETE" -> viewModel.deleteTask(task)
-                                "PENDING" -> viewModel.updateTask(task.copy(status = "PENDING"))
                             }
                         }
-                    )
-                }
-            }
-        }
-    }
-
-    // Add Task Dialog
-    if (showAddTaskDialog) {
-        Dialog(onDismissRequest = { showAddTaskDialog = false }) {
-            Surface(modifier = Modifier.glassCard().padding(16.dp), color = CardGlassSurface) {
-                Column {
-                    Text("Add Timetable Task", fontWeight = FontWeight.Bold, color = CyanPrimary, fontSize = 16.sp)
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedTextField(
-                        value = taskNameInput,
-                        onValueChange = { taskNameInput = it },
-                        label = { Text("Task Name", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                        modifier = Modifier.fillMaxWidth().testTag("add_name_field")
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = taskTimeInput,
-                        onValueChange = { taskTimeInput = it },
-                        label = { Text("Time Range (e.g. 12:00 PM - 2:00 PM)", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                        modifier = Modifier.fillMaxWidth().testTag("add_time_field")
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text("Task Core Domain:", color = TextMutedGray, fontSize = 13.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("STUDY", "PROGRAMMING", "OTHER").forEach { type ->
-                            val isSelected = taskTypeInput == type
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { taskTypeInput = type },
-                                label = { Text(type, fontSize = 11.sp) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = CyanPrimary,
-                                    selectedLabelColor = DarkBackground
-                                )
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = taskNotesInput,
-                        onValueChange = { taskNotesInput = it },
-                        label = { Text("Optional Notes", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { showAddTaskDialog = false }) { Text("Cancel", color = TextSolidWhite) }
-                        Button(
-                            onClick = {
-                                if (taskNameInput.isNotBlank() && taskTimeInput.isNotBlank()) {
-                                    viewModel.addTask(taskNameInput, taskTimeInput, taskTypeInput, taskNotesInput)
-                                    showAddTaskDialog = false
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary)
-                        ) {
-                            Text("Create", color = DarkBackground)
-                        }
                     }
                 }
             }
         }
-    }
 
-    // Edit Task Dialog
-    if (selectedTaskForEdit != null) {
-        Dialog(onDismissRequest = { selectedTaskForEdit = null }) {
-            Surface(modifier = Modifier.glassCard().padding(16.dp), color = CardGlassSurface) {
-                Column {
-                    Text("Modify Timetable Task", fontWeight = FontWeight.Bold, color = CyanPrimary, fontSize = 16.sp)
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedTextField(
-                        value = taskNameInput,
-                        onValueChange = { taskNameInput = it },
-                        label = { Text("Task Name", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                        modifier = Modifier.fillMaxWidth().testTag("edit_name_field")
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = taskTimeInput,
-                        onValueChange = { taskTimeInput = it },
-                        label = { Text("Time Range (e.g. 10:30 PM)", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Text("Task Core Domain:", color = TextMutedGray, fontSize = 13.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("STUDY", "PROGRAMMING", "OTHER").forEach { type ->
-                            val isSelected = taskTypeInput == type
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { taskTypeInput = type },
-                                label = { Text(type, fontSize = 11.sp) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = CyanPrimary,
-                                    selectedLabelColor = DarkBackground
-                                )
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = taskNotesInput,
-                        onValueChange = { taskNotesInput = it },
-                        label = { Text("Task Notes", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { selectedTaskForEdit = null }) { Text("Cancel", color = TextSolidWhite) }
-                        Button(
-                            onClick = {
-                                val t = selectedTaskForEdit
-                                if (t != null && taskNameInput.isNotBlank() && taskTimeInput.isNotBlank()) {
-                                    viewModel.updateTask(
-                                        t.copy(
-                                            name = taskNameInput,
-                                            timeRange = taskTimeInput,
-                                            type = taskTypeInput,
-                                            notes = taskNotesInput
-                                        )
-                                    )
-                                    selectedTaskForEdit = null
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary)
-                        ) {
-                            Text("Save", color = DarkBackground)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun TimetableRowItem(task: TimetableTask, onAction: (String) -> Unit) {
-    val borderColor = when (task.status) {
-        "COMPLETED" -> TealAccent.copy(alpha = 0.5f)
-        "SKIPPED" -> ErrorNeon.copy(alpha = 0.5f)
-        "MOVED_TOMORROW" -> PurpleSecondary.copy(alpha = 0.5f)
-        else -> Color(0x33FFFFFF)
-    }
-
-    val statusIcon = when (task.status) {
-        "COMPLETED" -> Icons.Default.CheckCircle
-        "SKIPPED" -> Icons.Default.RemoveCircle
-        "MOVED_TOMORROW" -> Icons.Default.ArrowCircleRight
-        else -> Icons.Default.RadioButtonUnchecked
-    }
-
-    var isExpanded by remember { mutableStateOf(false) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .glassCard(borderColor = borderColor)
-            .clickable { isExpanded = !isExpanded }
-            .padding(12.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = {
-                    if (task.status == "COMPLETED") {
-                        onAction("PENDING")
-                    } else {
-                        onAction("COMPLETE")
-                    }
-                }
-            ) {
-                Icon(
-                    imageVector = statusIcon,
-                    contentDescription = "Status Toggle",
-                    tint = if (task.status == "COMPLETED") TealAccent else TextMutedGray,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        task.name,
-                        color = if (task.status == "COMPLETED") TealAccent else TextSolidWhite,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(
-                                when (task.type) {
-                                    "STUDY" -> TealAccent.copy(alpha = 0.15f)
-                                    "PROGRAMMING" -> CyanPrimary.copy(alpha = 0.15f)
-                                    else -> PurpleSecondary.copy(alpha = 0.15f)
-                                }
-                            )
-                            .padding(horizontal = 5.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            task.type,
-                            color = when (task.type) {
-                                "STUDY" -> TealAccent
-                                "PROGRAMMING" -> CyanPrimary
-                                else -> PurpleSecondary
-                            },
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-                Text(task.timeRange, color = CyanPrimary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-            }
-
-            IconButton(onClick = { isExpanded = !isExpanded }) {
-                Icon(
-                    if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = "Toggle Actions",
-                    tint = TextSolidWhite
-                )
-            }
-        }
-
-        if (isExpanded) {
-            Spacer(modifier = Modifier.height(10.dp))
-            if (task.notes.isNotBlank()) {
-                Text(
-                    text = "Notes: ${task.notes}",
-                    color = TextMutedGray,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
+        items(tasks.filter { it.status != "SKIPPED" && it.status != "MOVED_TOMORROW" }) { task ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .glassCard()
+                    .animateContentSize(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Skip Button
-                Button(
-                    onClick = { onAction("SKIP") },
-                    colors = ButtonDefaults.buttonColors(containerColor = ErrorNeon),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text("Skip", fontSize = 11.sp, color = TextSolidWhite)
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(
+                                    when (task.status) {
+                                        "COMPLETED" -> EmeraldPositive
+                                        else -> AmberWarm
+                                    }
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            task.name,
+                            color = TextSolidWhite,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            textDecoration = if (task.status == "COMPLETED") androidx.compose.ui.text.style.TextDecoration.LineThrough else null
+                        )
+                    }
+                    Text("${task.timeRange} | ${task.type}", color = TextLightGray, fontSize = 11.sp)
+                    if (task.notes.isNotEmpty()) {
+                        Text(task.notes, color = TextLightGray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
 
-                // Defer to Tomorrow Button
-                Button(
-                    onClick = { onAction("TOMORROW") },
-                    colors = ButtonDefaults.buttonColors(containerColor = PurpleSecondary),
-                    modifier = Modifier.weight(1.3f),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text("Tomorrow", fontSize = 11.sp, color = TextSolidWhite)
-                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (task.status != "COMPLETED") {
+                        IconButton(onClick = { viewModel.updateTask(task.copy(status = "COMPLETED")) }) {
+                            Icon(Icons.Filled.Check, contentDescription = "Complete", tint = EmeraldPositive)
+                        }
 
-                // Edit Button
-                IconButton(
-                    onClick = { onAction("EDIT") },
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0x22FFFFFF))
-                ) {
-                    Icon(Icons.Filled.Edit, contentDescription = "Edit", tint = TextSolidWhite, modifier = Modifier.size(16.dp))
-                }
+                        IconButton(onClick = { viewModel.updateTask(task.copy(status = "SKIPPED")) }) {
+                            Icon(Icons.Filled.SkipNext, contentDescription = "Skip to Recovery", tint = CrimsonAlert)
+                        }
+                    }
 
-                // Delete Button
-                IconButton(
-                    onClick = { onAction("DELETE") },
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(ErrorNeon.copy(alpha = 0.2f))
-                ) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = ErrorNeon, modifier = Modifier.size(16.dp))
+                    IconButton(onClick = { viewModel.deleteTask(task) }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Delete row", tint = TextLightGray)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAddTaskDialog) {
+        Dialog(onDismissRequest = { showAddTaskDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = DeepSlateCard,
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("ADD SCHEDULE SLOT", color = TextSolidWhite, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = taskNameInput,
+                        onValueChange = { taskNameInput = it },
+                        label = { Text("Task Target Board Activity (e.g., Accounts Study block)", color = TextLightGray) },
+                        modifier = Modifier.fillMaxWidth().testTag("add_task_name_field"),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextLightGray)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = taskTimeInput,
+                        onValueChange = { taskTimeInput = it },
+                        label = { Text("Time range (e.g., 5:00 PM - 6:30 PM)", color = TextLightGray) },
+                        modifier = Modifier.fillMaxWidth().testTag("add_task_time_field"),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextLightGray)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text("Slot Category:", color = TextLightGray, fontSize = 12.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("STUDY", "PROGRAMMING", "HABIT", "OTHER").forEach { type ->
+                            Box(
+                                modifier = Modifier
+                                    .padding(vertical = 4.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (taskCategory == type) CyanPrimary else DarkBackground)
+                                    .clickable { taskCategory = type }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Text(type, color = if (taskCategory == type) DarkBackground else TextSolidWhite, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = taskNotesInput,
+                        onValueChange = { taskNotesInput = it },
+                        label = { Text("Additional directives", color = TextLightGray) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextLightGray)
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = {
+                            if (taskNameInput.isEmpty()) return@Button
+                            viewModel.addTask(taskNameInput, taskTimeInput, taskCategory, taskNotesInput)
+                            showAddTaskDialog = false
+                            taskNameInput = ""
+                            Toast.makeText(context, "Activity Seeded!", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary)
+                    ) {
+                        Text("Add to Timetable Grid")
+                    }
                 }
             }
         }
@@ -1459,546 +1715,172 @@ fun TimetableRowItem(task: TimetableTask, onAction: (String) -> Unit) {
 }
 
 // ----------------------------------------------------
-// SCREEN 3: SUBJECT MANAGEMENT & WEEKLY PLAN
+// 3. Subjects Curriculum Chapter status Screen
 // ----------------------------------------------------
 @Composable
 fun SubjectsScreen(
     subjects: List<SubjectProgress>,
-    weeklyPlans: List<WeeklyPlan>,
+    chapterStatuses: List<ChapterStatus>,
     viewModel: DashboardViewModel
 ) {
-    var selectedTabSub by remember { mutableStateOf("Subjects") }
-    var subjectToEdit by remember { mutableStateOf<SubjectProgress?>(null) }
+    var selectedSubject by remember { mutableStateOf<SubjectProgress?>(null) }
+    var showChapterEditDialog by remember { mutableStateOf(false) }
 
-    var chapterCountInput by remember { mutableStateOf("0") }
-    var totalChaptersInput by remember { mutableStateOf("10") }
-    var revisionInput by remember { mutableStateOf("NOT_REVISED") }
-    var notesInput by remember { mutableStateOf("") }
-
-    var weekDayToEdit by remember { mutableStateOf<WeeklyPlan?>(null) }
-    var topicsIn by remember { mutableStateOf("") }
-    var chCompletedIn by remember { mutableStateOf("0") }
-    var testsGivenIn by remember { mutableStateOf("0") }
-    var weakAreasIn by remember { mutableStateOf("") }
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Inner Sub Tabs
-        TabRow(
-            selectedTabIndex = if (selectedTabSub == "Subjects") 0 else 1,
-            containerColor = DarkBackground,
-            contentColor = CyanPrimary
-        ) {
-            Tab(
-                selected = selectedTabSub == "Subjects",
-                onClick = { selectedTabSub = "Subjects" },
-                text = { Text("CLASS 12 Commerce", fontWeight = FontWeight.Bold) }
-            )
-            Tab(
-                selected = selectedTabSub == "Weekly",
-                onClick = { selectedTabSub = "Weekly" },
-                text = { Text("WEEKLY GOAL PLANNER", fontWeight = FontWeight.Bold) }
-            )
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Column {
+                Text("COURSE MATRICES", color = TextLightGray, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("COMMERCE SYLLABUS DIRECTORY", color = TextSolidWhite, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
+            }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        items(subjects) { subject ->
+            val chaptersOfSubject = chapterStatuses.filter { it.subject.equals(subject.subjectName, ignoreCase = true) }
+            val completedChapters = chaptersOfSubject.count { it.status == "MASTERED" }
+            val progressFactor = if (chaptersOfSubject.isNotEmpty()) completedChapters.toFloat() / chaptersOfSubject.size else 0.1f
 
-        if (selectedTabSub == "Subjects") {
-            LazyColumn(
+            Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .testTag("subjects_list"),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 16.dp)
+                    .fillMaxWidth()
+                    .glassCard()
+                    .clickable { selectedSubject = subject; showChapterEditDialog = true }
             ) {
-                items(subjects) { sub ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .glassCard()
-                            .clickable {
-                                subjectToEdit = sub
-                                chapterCountInput = sub.currentChapter.toString()
-                                totalChaptersInput = sub.totalChapters.toString()
-                                revisionInput = sub.revisionStatus
-                                notesInput = sub.notes
-                            }
-                            .padding(14.dp)
-                    ) {
-                        Column {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text(sub.subjectName, color = TextSolidWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                    Text(
-                                        "Revision: ${sub.revisionStatus.replace("_", " ")}",
-                                        color = CyanPrimary,
-                                        fontSize = 11.sp
-                                    )
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(
-                                            when (sub.completionStatus) {
-                                                "COMPLETED" -> TealAccent.copy(alpha = 0.2f)
-                                                else -> PurpleSecondary.copy(alpha = 0.2f)
-                                            }
-                                        )
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
-                                    Text(
-                                        sub.completionStatus,
-                                        color = if (sub.completionStatus == "COMPLETED") TealAccent else PurpleSecondary,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            // Custom progress
-                            val percent = if (sub.totalChapters > 0) {
-                                ((sub.currentChapter.toFloat() / sub.totalChapters) * 100).toInt()
-                            } else 0
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                LinearProgressIndicator(
-                                    progress = { percent.toFloat() / 100f },
-                                    color = if (percent >= 100) TealAccent else CyanPrimary,
-                                    trackColor = Color(0x33FFFFFF),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(8.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                )
-                                Text(
-                                    "$percent%",
-                                    color = TextSolidWhite,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(start = 10.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    "Chapters completed: ${sub.currentChapter} / ${sub.totalChapters}",
-                                    color = TextMutedGray,
-                                    fontSize = 11.sp
-                                )
-                                if (sub.notes.isNotBlank()) {
-                                    Text(
-                                        sub.notes,
-                                        color = TextMutedGray,
-                                        fontSize = 11.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.width(150.dp),
-                                        textAlign = TextAlign.End
-                                    )
-                                }
-                            }
-                        }
-                    }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(subject.subjectName, color = TextSolidWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("$completedChapters / ${chaptersOfSubject.size} Mastered", color = CyanPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
-            }
-        } else {
-            // Weekly Planner Tab
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 16.dp)
-            ) {
-                items(weeklyPlans) { plan ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .glassCard()
-                            .clickable {
-                                weekDayToEdit = plan
-                                topicsIn = plan.topicsCompleted
-                                chCompletedIn = plan.chaptersCompleted.toString()
-                                testsGivenIn = plan.testsGiven.toString()
-                                weakAreasIn = plan.weakAreas
-                            }
-                            .padding(14.dp)
-                    ) {
-                        Column {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(plan.dayOfWeek, color = CyanPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Badge(containerColor = PurpleSecondary) { Text("Ch: ${plan.chaptersCompleted}", color = TextSolidWhite) }
-                                    Badge(containerColor = TealAccent) { Text("Tests: ${plan.testsGiven}", color = DarkBackground) }
-                                }
-                            }
 
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Topics Completed: ${plan.topicsCompleted.ifBlank { "None documented" }}", color = TextSolidWhite, fontSize = 13.sp)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text("Weak Areas: ${plan.weakAreas.ifBlank { "None detected" }}", color = ErrorNeon, fontSize = 12.sp)
-                        }
-                    }
-                }
+                Spacer(modifier = Modifier.height(10.dp))
+
+                LinearProgressIndicator(
+                    progress = { progressFactor },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = CyanPrimary,
+                    trackColor = DarkBackground
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = subject.notes.ifEmpty { "Target focused review. Log study sessions to automatically update." },
+                    color = TextLightGray,
+                    fontSize = 11.sp,
+                    overflow = TextOverflow.Ellipsis,
+                    maxLines = 1
+                )
             }
         }
     }
 
-    // Modal to Edit Subject Details
-    if (subjectToEdit != null) {
-        Dialog(onDismissRequest = { subjectToEdit = null }) {
-            Surface(modifier = Modifier.glassCard().padding(16.dp), color = CardGlassSurface) {
-                Column {
-                    Text("Configure Subject: ${subjectToEdit?.subjectName}", fontWeight = FontWeight.Bold, color = CyanPrimary, fontSize = 16.sp)
-                    Spacer(modifier = Modifier.height(12.dp))
+    if (showChapterEditDialog && selectedSubject != null) {
+        val activeS = selectedSubject!!
+        val chapterList = chapterStatuses.filter { it.subject.equals(activeS.subjectName, ignoreCase = true) }
+        var tempNotesInput by remember { mutableStateOf(activeS.notes) }
 
+        Dialog(onDismissRequest = { showChapterEditDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = DeepSlateCard,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(480.dp)
+                    .padding(8.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("${activeS.subjectName} CHAPTER AUDITOR", color = TextSolidWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text("Subject Prep Directives:", color = TextLightGray, fontSize = 11.sp)
                     OutlinedTextField(
-                        value = chapterCountInput,
-                        onValueChange = { chapterCountInput = it },
-                        label = { Text("Chapters Completed", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                        modifier = Modifier.fillMaxWidth().testTag("chapters_completed_field")
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = totalChaptersInput,
-                        onValueChange = { totalChaptersInput = it },
-                        label = { Text("Total Chapters in Syllabus", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                        modifier = Modifier.fillMaxWidth()
+                        value = tempNotesInput,
+                        onValueChange = { tempNotesInput = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(60.dp),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextLightGray)
                     )
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    Text("Revision Status", color = TextMutedGray, fontSize = 13.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        listOf("NOT_REVISED", "REVISED_ONCE", "REVISED_MULTIPLE").forEach { status ->
-                            val isSel = revisionInput == status
-                            FilterChip(
-                                selected = isSel,
-                                onClick = { revisionInput = status },
-                                label = { Text(status.substringAfter("_"), fontSize = 9.sp) },
-                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = CyanPrimary)
-                            )
-                        }
-                    }
+                    Text("Chapter Mastery Roadmap:", color = TextLightGray, fontSize = 12.sp)
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = notesInput,
-                        onValueChange = { notesInput = it },
-                        label = { Text("Syllabus & Target Notes", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { subjectToEdit = null }) { Text("Cancel", color = TextSolidWhite) }
-                        Button(
-                            onClick = {
-                                val s = subjectToEdit
-                                val mins = chapterCountInput.toIntOrNull() ?: 0
-                                val maxs = totalChaptersInput.toIntOrNull() ?: 10
-                                if (s != null) {
-                                    viewModel.updateSubjectChapters(s.subjectName, mins, maxs)
-                                    viewModel.updateSubjectMetadata(s.subjectName, notesInput, revisionInput)
-                                    subjectToEdit = null
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary)
-                        ) {
-                            Text("Apply", color = DarkBackground)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Modal to Edit Weekly Plan
-    if (weekDayToEdit != null) {
-        Dialog(onDismissRequest = { weekDayToEdit = null }) {
-            Surface(modifier = Modifier.glassCard().padding(16.dp), color = CardGlassSurface) {
-                Column {
-                    Text("Plan: ${weekDayToEdit?.dayOfWeek}", fontWeight = FontWeight.Bold, color = CyanPrimary, fontSize = 16.sp)
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedTextField(
-                        value = topicsIn,
-                        onValueChange = { topicsIn = it },
-                        label = { Text("Topics Covered Today", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = chCompletedIn,
-                            onValueChange = { chCompletedIn = it },
-                            label = { Text("Chapters Finish", color = TextMutedGray) },
-                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = testsGivenIn,
-                            onValueChange = { testsGivenIn = it },
-                            label = { Text("Tests Attempt", color = TextMutedGray) },
-                            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = weakAreasIn,
-                        onValueChange = { weakAreasIn = it },
-                        label = { Text("Weak areas requiring Revision", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { weekDayToEdit = null }) { Text("Cancel", color = TextSolidWhite) }
-                        Button(
-                            onClick = {
-                                val currentDay = weekDayToEdit
-                                if (currentDay != null) {
-                                    val chapters = chCompletedIn.toIntOrNull() ?: 0
-                                    val tests = testsGivenIn.toIntOrNull() ?: 0
-                                    viewModel.updateWeeklyPlan(currentDay.dayOfWeek, topicsIn, chapters, tests, weakAreasIn)
-                                    weekDayToEdit = null
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary)
-                        ) {
-                            Text("Save", color = DarkBackground)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ----------------------------------------------------
-// SCREEN 4: PROGRAMMING & SELF IMPROVEMENT TRACKERS
-// ----------------------------------------------------
-@Composable
-fun TrackersScreen(
-    programmingTracks: List<ProgrammingTracker>,
-    selfImprovements: List<SelfImprovementTracker>,
-    viewModel: DashboardViewModel
-) {
-    var trackerToEdit by remember { mutableStateOf<ProgrammingTracker?>(null) }
-    var devHoursInput by remember { mutableStateOf("0.0") }
-    var devProjectsInput by remember { mutableStateOf("0") }
-    var devConceptsInput by remember { mutableStateOf("") }
-    var devNotesInput by remember { mutableStateOf("") }
-
-    var selectedSection by remember { mutableStateOf("Coding") }
-    val scrollState = rememberScrollState()
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        Spacer(modifier = Modifier.height(8.dp))
-
-        TabRow(
-            selectedTabIndex = if (selectedSection == "Coding") 0 else 1,
-            containerColor = DarkBackground,
-            contentColor = CyanPrimary
-        ) {
-            Tab(selected = selectedSection == "Coding", onClick = { selectedSection = "Coding" }, text = { Text("CODING & LANGUAGES", fontWeight = FontWeight.Bold) })
-            Tab(selected = selectedSection == "Growth", onClick = { selectedSection = "Growth" }, text = { Text("GROWTH & DELIBERATE PROGRESS", fontWeight = FontWeight.Bold) })
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        if (selectedSection == "Coding") {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .testTag("programming_list"),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 16.dp)
-            ) {
-                items(programmingTracks) { item ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .glassCard()
-                            .clickable {
-                                trackerToEdit = item
-                                devHoursInput = item.learningHours.toString()
-                                devProjectsInput = item.projectsCompleted.toString()
-                                devConceptsInput = item.conceptsLearned
-                                devNotesInput = item.notes
-                            }
-                            .padding(14.dp)
-                    ) {
-                        Column {
+                    LazyColumn(modifier = Modifier.weight(1f)) {
+                        items(chapterList) { cs ->
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Filled.Code, contentDescription = null, tint = CyanPrimary, modifier = Modifier.padding(end = 8.dp))
-                                    Text(item.trackName, color = TextSolidWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                }
-
-                                Badge(containerColor = CyanPrimary) {
-                                    Text("${item.projectsCompleted} Projects", color = DarkBackground, fontWeight = FontWeight.Bold)
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text("Learning Hours Invested: ${item.learningHours} hrs", color = TextSolidWhite, fontSize = 13.sp)
-                            Text("Key Concepts: ${item.conceptsLearned.ifBlank { "None specified" }}", color = TextMutedGray, fontSize = 12.sp)
-
-                            if (item.notes.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text("Tracker Notes: ${item.notes}", color = TealAccent, fontSize = 11.sp)
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            // Self Improvement Sliders and ratings
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(scrollState)
-                    .padding(vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                selfImprovements.forEach { item ->
-                    var sliderVal by remember(item.levelPercent) { mutableFloatStateOf(item.levelPercent.toFloat()) }
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .glassCard()
-                            .padding(14.dp)
-                    ) {
-                        Column {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(item.topicName, color = TextSolidWhite, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                Text("${sliderVal.toInt()}% Progress", color = PurpleSecondary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            }
-
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(item.focusText.ifBlank { "Daily intentional habits and assessments" }, color = TextMutedGray, fontSize = 11.sp)
-
-                            Slider(
-                                value = sliderVal,
-                                onValueChange = {
-                                    sliderVal = it
-                                },
-                                onValueChangeFinished = {
-                                    viewModel.updateSelfImprovement(item.topicName, item.focusText, sliderVal.toInt(), item.notes)
-                                },
-                                valueRange = 0f..100f,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = PurpleSecondary,
-                                    activeTrackColor = PurpleSecondary,
-                                    inactiveTrackColor = Color(0x33FFFFFF)
+                                Text(
+                                    cs.chapterName,
+                                    color = TextSolidWhite,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
-                            )
+
+                                var isMenuExpanded by remember { mutableStateOf(false) }
+                                Box {
+                                    Button(
+                                        onClick = { isMenuExpanded = true },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = when (cs.status) {
+                                                "MASTERED" -> EmeraldPositive
+                                                "REVISION" -> AmberWarm
+                                                "NOT_STARTED" -> Color(0xFF64748B)
+                                                else -> CyanPrimary
+                                            }
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(cs.status, fontSize = 9.sp, color = TextSolidWhite)
+                                    }
+
+                                    DropdownMenu(
+                                        expanded = isMenuExpanded,
+                                        onDismissRequest = { isMenuExpanded = false }
+                                    ) {
+                                        listOf("NOT_STARTED", "LEARNING", "PRACTICING", "REVISION", "MASTERED").forEach { status ->
+                                            DropdownMenuItem(
+                                                text = { Text(status) },
+                                                onClick = {
+                                                    viewModel.updateChapterStatusLocal(cs.subject, cs.chapterName, status)
+                                                    isMenuExpanded = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
-                }
-            }
-        }
-    }
 
-    // Modal to Edit Coding Trackers
-    if (trackerToEdit != null) {
-        Dialog(onDismissRequest = { trackerToEdit = null }) {
-            Surface(modifier = Modifier.glassCard().padding(16.dp), color = CardGlassSurface) {
-                Column {
-                    Text("Modify: ${trackerToEdit?.trackName}", fontWeight = FontWeight.Bold, color = CyanPrimary, fontSize = 16.sp)
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    OutlinedTextField(
-                        value = devHoursInput,
-                        onValueChange = { devHoursInput = it },
-                        label = { Text("Learning Hours", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                        modifier = Modifier.fillMaxWidth().testTag("track_hours_field")
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = devProjectsInput,
-                        onValueChange = { devProjectsInput = it },
-                        label = { Text("Completed Projects Count", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                        modifier = Modifier.fillMaxWidth().testTag("track_projects_field")
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = devConceptsInput,
-                        onValueChange = { devConceptsInput = it },
-                        label = { Text("Key Concepts Mastered", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = devNotesInput,
-                        onValueChange = { devNotesInput = it },
-                        label = { Text("Growth Goal Notes", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { trackerToEdit = null }) { Text("Cancel", color = TextSolidWhite) }
+                    Row(modifier = Modifier.fillMaxWidth()) {
                         Button(
                             onClick = {
-                                val t = trackerToEdit
-                                val hrs = devHoursInput.toDoubleOrNull() ?: 0.0
-                                val projs = devProjectsInput.toIntOrNull() ?: 0
-                                if (t != null) {
-                                    viewModel.updateProgrammingTrack(t.trackName, hrs, projs, devConceptsInput, devNotesInput)
-                                    trackerToEdit = null
-                                }
+                                viewModel.updateSubjectMetadata(activeS.subjectName, tempNotesInput, "UPDATED")
+                                showChapterEditDialog = false
                             },
+                            modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary)
                         ) {
-                            Text("Save", color = DarkBackground)
+                            Text("Save Metadata Changes", color = DarkBackground)
                         }
                     }
                 }
@@ -2008,315 +1890,331 @@ fun TrackersScreen(
 }
 
 // ----------------------------------------------------
-// SCREEN 5: HABIT TRACKER SCREEN
+// 4. Skills & Trackers Boards
+// ----------------------------------------------------
+@Composable
+fun TrackersScreen(
+    trackers: List<ProgrammingTracker>,
+    selfImprovements: List<SelfImprovementTracker>,
+    viewModel: DashboardViewModel
+) {
+    var selectedTracker by remember { mutableStateOf<ProgrammingTracker?>(null) }
+    var trackerHours by remember { mutableStateOf("") }
+    var trackerConcepts by remember { mutableStateOf("") }
+    var trackerNotes by remember { mutableStateOf("") }
+    var trackerProjectsStr by remember { mutableStateOf("") }
+
+    val context = LocalContext.current
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Column {
+                Text("TECHNICAL & PERSONAL LOGS", color = TextLightGray, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("PROGRAMMING SKILLS DECK", color = TextSolidWhite, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
+            }
+        }
+
+        // Programming skills checklist
+        items(trackers) { track ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .glassCard()
+                    .clickable {
+                        selectedTracker = track
+                        trackerHours = track.learningHours.toString()
+                        trackerConcepts = track.conceptsLearned
+                        trackerNotes = track.notes
+                        trackerProjectsStr = track.projectsCompleted.toString()
+                    }
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(track.trackName, color = TextSolidWhite, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("${track.learningHours} Hours Practiced", color = PurpleAccent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Latest Notes: ${track.notes}", color = TextLightGray, fontSize = 11.sp)
+                Text("Certs & Projects completed: ${track.projectsCompleted}", color = EmeraldPositive, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                if (track.conceptsLearned.isNotEmpty()) {
+                    Text("Skills target mapped: ${track.conceptsLearned}", color = CyanPrimary, fontSize = 11.sp)
+                }
+            }
+        }
+    }
+
+    if (selectedTracker != null) {
+        val t = selectedTracker!!
+        Dialog(onDismissRequest = { selectedTracker = null }) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = DeepSlateCard,
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("SECURE LEVEL UPDATER: ${t.trackName.uppercase()}", color = TextSolidWhite, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = trackerHours,
+                        onValueChange = { trackerHours = it },
+                        label = { Text("Cumulative hours logged", color = TextLightGray) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextLightGray)
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = trackerProjectsStr,
+                        onValueChange = { trackerProjectsStr = it },
+                        label = { Text("Total Projects built", color = TextLightGray) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextLightGray)
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = trackerConcepts,
+                        onValueChange = { trackerConcepts = it },
+                        label = { Text("Core concepts learned (Comma separated)", color = TextLightGray) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextLightGray)
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = trackerNotes,
+                        onValueChange = { trackerNotes = it },
+                        label = { Text("Development logs...", color = TextLightGray) },
+                        modifier = Modifier.fillMaxWidth().height(60.dp),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextLightGray)
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = {
+                            val hrsDouble = trackerHours.toDoubleOrNull() ?: 0.0
+                            val projInt = trackerProjectsStr.toIntOrNull() ?: 0
+                            viewModel.updateProgrammingTrack(t.trackName, hrsDouble, projInt, trackerConcepts, trackerNotes)
+                            selectedTracker = null
+                            Toast.makeText(context, "Tech metrics compiled!", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary)
+                    ) {
+                        Text("Verify & Save Update", color = DarkBackground)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ----------------------------------------------------
+// 5. Habits Screening Panel
 // ----------------------------------------------------
 @Composable
 fun HabitsScreen(
     habits: List<Habit>,
-    habitLogs: List<HabitLog>,
+    logs: List<HabitLog>,
     viewModel: DashboardViewModel
 ) {
-    var showHabitStats by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val liveDateStr by viewModel.currentDateStr.collectAsStateWithLifecycle()
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "DAILY HABIT STACKS & PERSISTENCE",
-                color = CyanPrimary,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
-            )
-
-            IconButton(
-                onClick = { showHabitStats = !showHabitStats },
-                modifier = Modifier.testTag("habit_stats_toggle")
-            ) {
-                Icon(
-                    imageVector = if (showHabitStats) Icons.Filled.ViewAgenda else Icons.Filled.BarChart,
-                    contentDescription = "Toggle completion grid model view",
-                    tint = CyanPrimary
-                )
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Column {
+                Text("DISCIPLINE COUNTERS", color = TextLightGray, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("DAILY HABIT CYCLES", color = TextSolidWhite, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        items(habits) { habit ->
+            val logsForHabit = logs.filter { it.habitName == habit.name }
+            val completedToday = logsForHabit.any { it.dateStr == liveDateStr && it.status }
 
-        if (showHabitStats) {
-            // Visual habit compliance stats card
-            HabitComplianceStats(habits, habitLogs)
-        } else {
-            // Standard lists of Habits
-            val currentDateStr by viewModel.currentDateStr.collectAsStateWithLifecycle()
-            val completedToday = habitLogs.filter { it.dateStr == currentDateStr }.map { it.habitName }.toSet()
-
-            LazyColumn(
+            Row(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .testTag("habits_list"),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 16.dp)
+                    .fillMaxWidth()
+                    .glassCard(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                items(habits) { habit ->
-                    val checked = completedToday.contains(habit.name)
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .glassCard(borderColor = if (checked) TealAccent.copy(alpha = 0.5f) else Color(0x33FFFFFF))
-                            .clickable {
-                                viewModel.toggleHabitToday(habit.name, !checked)
-                            }
-                            .padding(14.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(
-                                    checked = checked,
-                                    onCheckedChange = { viewModel.toggleHabitToday(habit.name, it) },
-                                    colors = CheckboxDefaults.colors(checkedColor = TealAccent, uncheckedColor = TextMutedGray),
-                                    modifier = Modifier.testTag("habit_cb_${habit.name.replace(" ", "_")}")
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    habit.name,
-                                    color = if (checked) TealAccent else TextSolidWhite,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 15.sp
-                                )
-                            }
-
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Filled.LocalFireDepartment, contentDescription = null, tint = ErrorNeon, modifier = Modifier.size(16.dp))
-                                    Text("${habit.streak}d", color = TextSolidWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Filled.EmojiEvents, contentDescription = null, tint = CyanPrimary, modifier = Modifier.size(16.dp))
-                                    Text("${habit.monthlyStreak}m", color = TextSolidWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
+                Column {
+                    Text(habit.name, color = TextSolidWhite, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("Streak Tracker: ${habit.streak} Days 🔥", color = AmberWarm, fontSize = 12.sp)
                 }
+
+                Checkbox(
+                    checked = completedToday,
+                    onCheckedChange = { isChecked ->
+                        viewModel.toggleHabitToday(habit.name, isChecked)
+                        Toast.makeText(
+                            context,
+                            if (isChecked) "Habit locked! XP granted." else "Habit unchecked.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    modifier = Modifier.testTag("habit_checkbox_${habit.name.replace(" ", "_")}"),
+                    colors = CheckboxDefaults.colors(checkedColor = EmeraldPositive)
+                )
             }
         }
     }
 }
 
+// ----------------------------------------------------
+// 6. RICH NOTES LIBRARY WITH FOLDERS & SEARCH
+// ----------------------------------------------------
 @Composable
-fun HabitComplianceStats(habits: List<Habit>, logs: List<HabitLog>) {
-    val scrollState = rememberScrollState()
+fun NotesScreen(notes: List<NoteItem>, viewModel: DashboardViewModel) {
+    var searchToken by remember { mutableStateOf("") }
+    var selectedNoteForEdit by remember { mutableStateOf<NoteItem?>(null) }
+    var activeCategoryFilter by remember { mutableStateOf("ALL") }
+
+    var showAddNoteDialog by remember { mutableStateOf(false) }
+    var inputTitle by remember { mutableStateOf("") }
+    var inputCategory by remember { mutableStateOf("STUDY") }
+    var inputTags by remember { mutableStateOf("") }
+    var inputContent by remember { mutableStateOf("") }
+
+    val context = LocalContext.current
+
+    val filteredNotes = notes.filter { note ->
+        val matchesCategory = activeCategoryFilter == "ALL" || note.category.equals(activeCategoryFilter, ignoreCase = true)
+        val matchesSearch = note.title.contains(searchToken, ignoreCase = true) ||
+                note.content.contains(searchToken, ignoreCase = true) ||
+                note.tags.contains(searchToken, ignoreCase = true)
+        matchesCategory && matchesSearch
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(scrollState),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(16.dp)
     ) {
-        // Overall completions indicator
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .glassCard()
-                .padding(16.dp)
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Compliance Outlook Grid", color = CyanPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Custom completion circles
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    habits.take(4).forEach { habit ->
-                        val habitLogsCount = logs.count { it.habitName == habit.name && it.status }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(46.dp)) {
-                                CircularProgressIndicator(
-                                    progress = { 1.0f },
-                                    color = Color(0x22FFFFFF),
-                                    strokeWidth = 3.dp
-                                )
-                                CircularProgressIndicator(
-                                    progress = { (habitLogsCount.toFloat() / 30f).coerceIn(0f, 1f) },
-                                    color = PurpleSecondary,
-                                    strokeWidth = 3.dp
-                                )
-                                Text("$habitLogsCount", color = TextSolidWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(habit.name.take(8) + "..", color = TextMutedGray, fontSize = 10.sp)
-                        }
-                    }
-                }
-            }
-        }
-
-        // Habit grid rendering past 5 days matrix
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .glassCard()
-                .padding(16.dp)
-        ) {
-            Column {
-                Text("HISTORIC HABIT MATRIX (Past 5 Days)", color = CyanPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(12.dp))
-
-                val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                val dates = (0..4).map { offset ->
-                    val cal = Calendar.getInstance()
-                    cal.add(Calendar.DATE, -offset)
-                    sdf.format(cal.time)
-                }.reversed()
-
-                dates.forEach { dt ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(dt, color = TextSolidWhite, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            habits.take(5).forEach { h ->
-                                val completedOnDate = logs.any { it.habitName == h.name && it.dateStr == dt && it.status }
-                                Box(
-                                    modifier = Modifier
-                                        .size(16.dp)
-                                        .clip(RoundedCornerShape(3.dp))
-                                        .background(if (completedOnDate) TealAccent else Color(0x33FFFFFF))
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ----------------------------------------------------
-// SCREEN 6: NOTES MANAGEMENT SYSTEM
-// ----------------------------------------------------
-@Composable
-fun NotesScreen(notes: List<NoteItem>, viewModel: DashboardViewModel) {
-    var showAddNoteDialog by remember { mutableStateOf(false) }
-    var selectedCategory by remember { mutableStateOf("STUDY") }
-
-    var titleInput by remember { mutableStateOf("") }
-    var contentInput by remember { mutableStateOf("") }
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        Spacer(modifier = Modifier.height(8.dp))
-
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Category selectors
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                listOf("STUDY", "PROGRAMMING", "PERSONAL").forEach { cat ->
-                    val isSel = selectedCategory == cat
-                    FilterChip(
-                        selected = isSel,
-                        onClick = { selectedCategory = cat },
-                        label = { Text(cat, fontSize = 10.sp) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = CyanPrimary,
-                            selectedLabelColor = DarkBackground
-                        ),
-                        modifier = Modifier.testTag("notes_chip_$cat")
-                    )
-                }
+            Column {
+                Text("DOCUMENTATION ENGINE", color = TextLightGray, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("RICH STUDY REPOSITORY", color = TextSolidWhite, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
             }
 
             Button(
-                onClick = {
-                    titleInput = ""
-                    contentInput = ""
-                    showAddNoteDialog = true
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary),
-                modifier = Modifier
-                    .height(32.dp)
-                    .testTag("add_note_button")
+                onClick = { showAddNoteDialog = true },
+                colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary)
             ) {
-                Icon(Icons.Filled.Add, contentDescription = null, tint = DarkBackground, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("New Note", color = DarkBackground, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Icon(Icons.Filled.NoteAdd, contentDescription = null, tint = DarkBackground)
+                Text("Add Note", color = DarkBackground, fontWeight = FontWeight.Bold)
             }
         }
 
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Search Bar Outlined
+        OutlinedTextField(
+            value = searchToken,
+            onValueChange = { searchToken = it },
+            label = { Text("Search title, tags, content...", color = TextLightGray) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("notes_search_input"),
+            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextLightGray)
+        )
+
         Spacer(modifier = Modifier.height(10.dp))
 
-        val filteredNotes = notes.filter { it.category == selectedCategory }
-
-        if (filteredNotes.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("No notes inside categorizations. Create one!", color = TextMutedGray)
+        // Folders tabs row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("ALL", "STUDY", "PROGRAMMING", "PERSONAL").forEach { cat ->
+                val isSelected = activeCategoryFilter == cat
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSelected) PurpleAccent else Color.Transparent)
+                        .clickable { activeCategoryFilter = cat }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(cat, color = if (isSelected) TextSolidWhite else TextLightGray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f)
-                    .testTag("notes_list"),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 16.dp)
-            ) {
-                items(filteredNotes) { note ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .glassCard()
-                            .padding(14.dp)
-                    ) {
-                        Column {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                Text(
-                                    note.title,
-                                    color = TextSolidWhite,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp,
-                                    modifier = Modifier.weight(1f)
-                                )
+        }
 
-                                IconButton(
-                                    onClick = { viewModel.deleteNote(note) },
-                                    modifier = Modifier.size(24.dp).testTag("delete_note_${note.id}")
+        Spacer(modifier = Modifier.height(12.dp))
+
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            items(filteredNotes) { note ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .glassCard()
+                        .clickable { selectedNoteForEdit = note }
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(note.title, color = TextSolidWhite, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(CyanPrimary.copy(alpha = 0.2f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(note.category, color = CyanPrimary, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        note.content,
+                        color = TextLightGray,
+                        fontSize = 12.sp,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    if (note.tags.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            note.tags.split(",").forEach { tag ->
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(DarkBackground)
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
                                 ) {
-                                    Icon(Icons.Filled.Delete, contentDescription = "Delete note", tint = ErrorNeon, modifier = Modifier.size(16.dp))
+                                    Text("#$tag", color = TextLightGray, fontSize = 9.sp)
                                 }
                             }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(note.content, color = TextMutedGray, fontSize = 13.sp)
                         }
                     }
                 }
@@ -2326,49 +2224,297 @@ fun NotesScreen(notes: List<NoteItem>, viewModel: DashboardViewModel) {
 
     if (showAddNoteDialog) {
         Dialog(onDismissRequest = { showAddNoteDialog = false }) {
-            Surface(modifier = Modifier.glassCard().padding(16.dp), color = CardGlassSurface) {
-                Column {
-                    Text("Create New OS Note", fontWeight = FontWeight.Bold, color = CyanPrimary, fontSize = 16.sp)
-                    Spacer(modifier = Modifier.height(12.dp))
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = DeepSlateCard,
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("ADD SECURED NOTE DOCUMENT", color = TextSolidWhite, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     OutlinedTextField(
-                        value = titleInput,
-                        onValueChange = { titleInput = it },
-                        label = { Text("Note Title", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                        modifier = Modifier.fillMaxWidth().testTag("note_title_field")
+                        value = inputTitle,
+                        onValueChange = { inputTitle = it },
+                        label = { Text("Note Title", color = TextLightGray) },
+                        modifier = Modifier.fillMaxWidth().testTag("add_note_title"),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextLightGray)
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
 
                     OutlinedTextField(
-                        value = contentInput,
-                        onValueChange = { contentInput = it },
-                        label = { Text("Write content body ...", color = TextMutedGray) },
-                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextSolidWhite),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp)
-                            .testTag("note_content_field")
+                        value = inputTags,
+                        onValueChange = { inputTags = it },
+                        label = { Text("Tags (Comma separated: math, review, revision)", color = TextLightGray) },
+                        modifier = Modifier.fillMaxWidth().testTag("add_note_tags"),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextLightGray)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text("File Categories Folders:", color = TextLightGray, fontSize = 11.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("STUDY", "PROGRAMMING", "PERSONAL").forEach { type ->
+                            Box(
+                                modifier = Modifier
+                                    .padding(vertical = 4.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (inputCategory == type) CyanPrimary else DarkBackground)
+                                    .clickable { inputCategory = type }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Text(type, color = if (inputCategory == type) DarkBackground else TextSolidWhite, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = inputContent,
+                        onValueChange = { inputContent = it },
+                        label = { Text("Workspace markdown formatting content...", color = TextLightGray) },
+                        modifier = Modifier.fillMaxWidth().height(100.dp).testTag("add_note_content"),
+                        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TextSolidWhite, unfocusedTextColor = TextLightGray)
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { showAddNoteDialog = false }) { Text("Cancel", color = TextSolidWhite) }
-                        Button(
-                            onClick = {
-                                if (titleInput.isNotBlank() && contentInput.isNotBlank()) {
-                                    viewModel.addNote(titleInput, contentInput, selectedCategory)
-                                    showAddNoteDialog = false
+                    Button(
+                        onClick = {
+                            if (inputTitle.isEmpty() || inputContent.isEmpty()) return@Button
+                            viewModel.addNote(inputTitle, inputContent, inputCategory, inputTags)
+                            showAddNoteDialog = false
+                            inputTitle = ""
+                            inputContent = ""
+                            Toast.makeText(context, "Note Document Filed!", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary)
+                    ) {
+                        Text("Commit Document", color = DarkBackground, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+
+    if (selectedNoteForEdit != null) {
+        val note = selectedNoteForEdit!!
+        Dialog(onDismissRequest = { selectedNoteForEdit = null }) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = DeepSlateCard,
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(note.title, color = TextSolidWhite, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        note.content,
+                        color = TextLightGray,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Button(
+                        onClick = {
+                            viewModel.deleteNote(note)
+                            selectedNoteForEdit = null
+                            Toast.makeText(context, "Note document discarded.", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = CrimsonAlert)
+                    ) {
+                        Text("Delete Document", color = TextSolidWhite)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ----------------------------------------------------
+// 7. CUSTOM HIGH-PERFORMANCE INTERACTIVE ANALYTICS CANVAS CHARTS
+// ----------------------------------------------------
+@Composable
+fun AnalyticsScreen(
+    sessions: List<StudySession>,
+    journal: List<JournalEntry>,
+    habits: List<Habit>,
+    logs: List<HabitLog>
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Column {
+                Text("METRICS DASHBOARD", color = TextLightGray, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("REAL ANALYTICS REPORTS (ZERO MOCKED STATES)", color = TextSolidWhite, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                Text("These charts compile and render from actual study logs stored on device. If empty, start recording session blocks.", color = TextLightGray, fontSize = 11.sp)
+            }
+        }
+
+        if (sessions.isEmpty()) {
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .glassCard(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(Icons.Filled.Timeline, contentDescription = null, tint = CyanPrimary, modifier = Modifier.size(48.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text("No local study records logged.", color = TextSolidWhite, fontWeight = FontWeight.SemiBold)
+                    Text("Filing your first mock study logs creates gorgeous, dynamic, interactive canvas graphs here instantly.", color = TextLightGray, fontSize = 12.sp, textAlign = TextAlign.Center)
+                }
+            }
+        } else {
+            // Study Hours allocation line chart drawn over Canvas!
+            item {
+                Column(modifier = Modifier.fillMaxWidth().glassCard()) {
+                    Text("WEEKLY STUDY DAILY TIMEPATH (HOURS)", color = TextSolidWhite, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val groupScores = sessions.take(7).map { it.durationHours.toFloat() }.ifEmpty { listOf(0f) }
+                    val maxVal = groupScores.maxOrNull()?.coerceAtLeast(1f) ?: 1f
+
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(130.dp)
+                    ) {
+                        val strokeWidth = 5f
+                        val widthBetweenPoints = size.width / (groupScores.size.coerceAtLeast(2) - 1).toFloat()
+                        val points = groupScores.mapIndexed { idx, hrs ->
+                            Offset(
+                                x = idx * widthBetweenPoints,
+                                y = size.height - (hrs / maxVal) * size.height
+                            )
+                        }
+
+                        // Drawing grid lines helper
+                        for (i in 0..3) {
+                            val yLine = (size.height / 3f) * i
+                            drawLine(
+                                color = Color(0xFF334155),
+                                start = Offset(0f, yLine),
+                                end = Offset(size.width, yLine),
+                                strokeWidth = 1f
+                            )
+                        }
+
+                        // Drawing Line
+                        val path = Path().apply {
+                            if (points.isNotEmpty()) {
+                                moveTo(points.first().x, points.first().y)
+                                for (i in 1 until points.size) {
+                                    lineTo(points[i].x, points[i].y)
                                 }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = CyanPrimary)
-                        ) {
-                            Text("Save", color = DarkBackground)
+                            }
+                        }
+
+                        drawPath(
+                            path = path,
+                            color = CyanPrimary,
+                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                        )
+
+                        // Draw Point circular node highlights
+                        points.forEach { pt ->
+                            drawCircle(
+                                color = PurpleAccent,
+                                radius = 8f,
+                                center = pt
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Earliest Log", color = TextLightGray, fontSize = 10.sp)
+                        Text("Active Track Summary", color = CyanPrimary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text("Most Recent Log", color = TextLightGray, fontSize = 10.sp)
+                    }
+                }
+            }
+
+            // Subject completions Bar charts canvas
+            item {
+                Column(modifier = Modifier.fillMaxWidth().glassCard()) {
+                    Text("MOCK COMPILER: ALL STUDY LOGS RECOGNIZED BY FIELD", color = TextSolidWhite, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val subSums = sessions.groupBy { it.subject }.mapValues { entry -> entry.value.sumOf { it.durationHours }.toFloat() }
+                    val subjectsList = subSums.keys.toList()
+                    val hourlyHeights = subSums.values.toList()
+                    val maxHrVal = hourlyHeights.maxOrNull()?.coerceAtLeast(1f) ?: 1f
+
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(130.dp)
+                    ) {
+                        val barWidth = size.width / (subjectsList.size * 2 + 1).toFloat()
+                        subjectsList.forEachIndexed { idx, sub ->
+                            val hrsTotal = subSums[sub] ?: 0f
+                            val barHeightActual = (hrsTotal / maxHrVal) * size.height
+                            val startX = (idx * 2 + 1) * barWidth
+                            val startY = size.height - barHeightActual
+
+                            drawRoundRect(
+                                color = PurpleAccent,
+                                topLeft = Offset(startX, startY),
+                                size = Size(barWidth, barHeightActual),
+                                cornerRadius = CornerRadius(10f, 10f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        subjectsList.forEach { sub ->
+                            Text(sub.take(4), color = TextLightGray, fontSize = 10.sp)
                         }
                     }
                 }
+            }
+        }
+
+        // Habit completions reporting totals
+        item {
+            Column(modifier = Modifier.fillMaxWidth().glassCard()) {
+                Text("HABIT AUDIT CYCLES IN PRIVATE WORKSPACE", color = TextSolidWhite, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                val totalChecked = logs.count { it.status }
+                val overallGoal = habits.size * 10
+                val progressRatio = if (overallGoal > 0) totalChecked.toFloat() / overallGoal else 0.5f
+
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Total Checked Tasks:", color = TextLightGray, fontSize = 12.sp)
+                    Text("$totalChecked Times locked completely", color = EmeraldPositive, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { progressRatio.coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                    color = EmeraldPositive,
+                    trackColor = DarkBackground
+                )
             }
         }
     }
